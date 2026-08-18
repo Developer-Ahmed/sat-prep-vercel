@@ -1,5 +1,3 @@
-import { DatabaseSync } from "node:sqlite";
-
 function normalizeArgs(args) {
   if (args.length === 1 && Array.isArray(args[0])) return args[0];
   return args;
@@ -20,7 +18,8 @@ function localStatement(statement, sourceSQL) {
   };
 }
 
-function localDatabase(path) {
+async function localDatabase(path) {
+  const { DatabaseSync } = await import("node:sqlite");
   const connection = new DatabaseSync(path);
 
   return {

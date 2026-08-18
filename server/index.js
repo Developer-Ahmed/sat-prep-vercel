@@ -38,7 +38,9 @@ const ENGLISH_REALISTIC_MODULE_QUOTA_OPTIONS = [
   { "Information and Ideas": 7, "Expression of Ideas": 5, "Craft and Structure": 7, "Standard English Conventions": 8 }
 ];
 
-if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
+if (!process.env.TURSO_DATABASE_URL && !existsSync(dataDir)) {
+  mkdirSync(dataDir, { recursive: true });
+}
 
 const db = await openDatabase({ path: dbPath });
 let cacheJob = {
