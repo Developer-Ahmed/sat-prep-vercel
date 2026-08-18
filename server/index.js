@@ -1028,15 +1028,36 @@ async function getAvailableCollegeBoardQuestions(subject = "math", pool = "main"
 }
 
 async function getContentCacheStats(subject = "math", pool = "main") {
-  const questions = await getAvailableCollegeBoardQuestions(subject, pool);
-  let cached = 0;
-  for (const question of questions) {
-    if (contentIsUsable(question, await cachedContentFor(question))) cached += 1;
-  }
+  const stats = await db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(
+        CASE
+          WHEN qc.content_key IS NOT NULL
+            AND json_valid(qc.data_json) = 1
+            AND (
+              COALESCE(json_extract(qc.data_json, '$.stem'), '') <> ''
+              OR COALESCE(json_extract(qc.data_json, '$.stimulus'), '') <> ''
+            )
+            AND json_array_length(qc.data_json, '$.correct_answer') > 0
+          THEN 1
+          ELSE 0
+        END
+      ) AS cached
+    FROM questions q
+    LEFT JOIN question_content qc
+      ON qc.content_key = q.source || ':' || COALESCE(NULLIF(q.external_id, ''), NULLIF(q.ibn, ''), q.row_id)
+    WHERE q.source = 'collegeboard'
+      AND q.subject = ?
+      AND q.pool = ?
+      AND q.excluded_bluebook = 0
+  `).get(normalizeSubject(subject), normalizePool(pool));
+  const cached = Number(stats.cached || 0);
+  const total = Number(stats.total || 0);
   return {
     cached,
-    total: questions.length,
-    remaining: Math.max(0, questions.length - cached)
+    total,
+    remaining: Math.max(0, total - cached)
   };
 }
 
