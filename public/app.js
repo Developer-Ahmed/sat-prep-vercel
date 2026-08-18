@@ -1364,9 +1364,17 @@ setInterval(() => {
     .catch(setError);
 }, 2000);
 
+state.loading = true;
+state.busyMessage = "Loading SAT data";
+render();
+
 loadStatus()
-  .then(render)
+  .then(() => {
+    state.loading = false;
+    render();
+  })
   .catch((error) => {
+    state.loading = false;
     setError(error);
     render();
   });

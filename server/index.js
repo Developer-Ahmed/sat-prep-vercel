@@ -43,6 +43,7 @@ if (!process.env.TURSO_DATABASE_URL && !existsSync(dataDir)) {
 }
 
 const db = await openDatabase({ path: dbPath });
+const shouldInitializeDatabase = !process.env.VERCEL || process.env.RUN_DATABASE_MIGRATIONS === "1";
 let cacheJob = {
   running: false,
   total: 0,
@@ -55,7 +56,7 @@ let cacheJob = {
   finishedAt: null
 };
 if (db.kind === "local") await db.exec("PRAGMA journal_mode = WAL;");
-await db.exec(`
+if (shouldInitializeDatabase) await db.exec(`
 	  CREATE TABLE IF NOT EXISTS questions (
 	    row_id TEXT PRIMARY KEY,
 	    source TEXT NOT NULL DEFAULT 'mysatprep',
@@ -193,35 +194,42 @@ async function ensureVocabularySet(slug, name, description, kind) {
   return (await db.prepare("SELECT id FROM vocab_sets WHERE slug = ?").get(slug)).id;
 }
 
-const vocabSetItemColumns = (await db.prepare("PRAGMA table_info(vocab_set_items)").all()).map((column) => column.name);
-if (!vocabSetItemColumns.includes("display_term")) {
-  await db.exec("ALTER TABLE vocab_set_items ADD COLUMN display_term TEXT");
-}
+let originalVocabSetId;
+let vocabTermsSetId;
+let wordsOnlySetId;
+let rootVocabSetId;
 
-const originalVocabSetId = await ensureVocabularySet(
-  "sat-vocabulary",
-  "SAT Vocabulary",
-  "Your original vocabulary collection",
-  "word"
-);
-const vocabTermsSetId = await ensureVocabularySet(
-  "vocab-terms",
-  "Vocab Terms",
-  "Imported from vocab_terms.txt",
-  "word"
-);
-const wordsOnlySetId = await ensureVocabularySet(
-  "words-only",
-  "Words Only",
-  "Imported from words_only.txt",
-  "word"
-);
-const rootVocabSetId = await ensureVocabularySet(
-  "roots",
-  "Roots",
-  "High-utility Greek and Latin roots",
-  "root"
-);
+if (shouldInitializeDatabase) {
+  const vocabSetItemColumns = (await db.prepare("PRAGMA table_info(vocab_set_items)").all()).map((column) => column.name);
+  if (!vocabSetItemColumns.includes("display_term")) {
+    await db.exec("ALTER TABLE vocab_set_items ADD COLUMN display_term TEXT");
+  }
+
+  originalVocabSetId = await ensureVocabularySet(
+    "sat-vocabulary",
+    "SAT Vocabulary",
+    "Your original vocabulary collection",
+    "word"
+  );
+  vocabTermsSetId = await ensureVocabularySet(
+    "vocab-terms",
+    "Vocab Terms",
+    "Imported from vocab_terms.txt",
+    "word"
+  );
+  wordsOnlySetId = await ensureVocabularySet(
+    "words-only",
+    "Words Only",
+    "Imported from words_only.txt",
+    "word"
+  );
+  rootVocabSetId = await ensureVocabularySet(
+    "roots",
+    "Roots",
+    "High-utility Greek and Latin roots",
+    "root"
+  );
+}
 
 async function migrateVocabularyProgressToSets() {
   const progressColumns = (await db.prepare("PRAGMA table_info(vocab_progress)").all()).map((column) => column.name);
@@ -281,68 +289,63 @@ async function migrateVocabularyProgressToSets() {
   `);
 }
 
-await migrateVocabularyProgressToSets();
+if (shouldInitializeDatabase) {
+  await migrateVocabularyProgressToSets();
 
-await db.prepare(`
-  INSERT OR IGNORE INTO vocab_set_items (set_id, item_id, position, added_at, display_term)
-  SELECT ?, id, id, ?, term FROM vocab_items
-  WHERE kind = 'word' AND source = 'quizlet-user-list'
-`).run(originalVocabSetId, now());
-await db.prepare(`
-  INSERT OR IGNORE INTO vocab_set_items (set_id, item_id, position, added_at, display_term)
-  SELECT ?, id, id, ?, term FROM vocab_items WHERE kind = 'root'
-`).run(rootVocabSetId, now());
+  await db.prepare(`
+    INSERT OR IGNORE INTO vocab_set_items (set_id, item_id, position, added_at, display_term)
+    SELECT ?, id, id, ?, term FROM vocab_items
+    WHERE kind = 'word' AND source = 'quizlet-user-list'
+  `).run(originalVocabSetId, now());
+  await db.prepare(`
+    INSERT OR IGNORE INTO vocab_set_items (set_id, item_id, position, added_at, display_term)
+    SELECT ?, id, id, ?, term FROM vocab_items WHERE kind = 'root'
+  `).run(rootVocabSetId, now());
 
-const moduleColumns = db
-  .prepare("PRAGMA table_info(modules)")
-  .all();
-const normalizedModuleColumns = (await moduleColumns)
-  .map((column) => column.name);
-if (!normalizedModuleColumns.includes("kind")) {
-  await db.exec("ALTER TABLE modules ADD COLUMN kind TEXT NOT NULL DEFAULT 'practice'");
+  const moduleColumns = await db.prepare("PRAGMA table_info(modules)").all();
+  const normalizedModuleColumns = moduleColumns.map((column) => column.name);
+  if (!normalizedModuleColumns.includes("kind")) {
+    await db.exec("ALTER TABLE modules ADD COLUMN kind TEXT NOT NULL DEFAULT 'practice'");
+  }
+  if (!normalizedModuleColumns.includes("subject")) {
+    await db.exec("ALTER TABLE modules ADD COLUMN subject TEXT NOT NULL DEFAULT 'math'");
+  }
+  if (!normalizedModuleColumns.includes("pool")) {
+    await db.exec("ALTER TABLE modules ADD COLUMN pool TEXT NOT NULL DEFAULT 'main'");
+  }
+  if (!normalizedModuleColumns.includes("section_id")) {
+    await db.exec("ALTER TABLE modules ADD COLUMN section_id TEXT");
+  }
+  if (!normalizedModuleColumns.includes("section_order")) {
+    await db.exec("ALTER TABLE modules ADD COLUMN section_order INTEGER");
+  }
+
+  const answerColumns = await db.prepare("PRAGMA table_info(module_answers)").all();
+  const normalizedAnswerColumns = answerColumns.map((column) => column.name);
+  if (!normalizedAnswerColumns.includes("time_spent_seconds")) {
+    await db.exec("ALTER TABLE module_answers ADD COLUMN time_spent_seconds INTEGER NOT NULL DEFAULT 0");
+  }
+
+  const questionColumns = await db.prepare("PRAGMA table_info(questions)").all();
+  const normalizedQuestionColumns = questionColumns.map((column) => column.name);
+  if (!normalizedQuestionColumns.includes("source")) {
+    await db.exec("ALTER TABLE questions ADD COLUMN source TEXT NOT NULL DEFAULT 'mysatprep'");
+  }
+  if (!normalizedQuestionColumns.includes("subject")) {
+    await db.exec("ALTER TABLE questions ADD COLUMN subject TEXT NOT NULL DEFAULT 'math'");
+  }
+  if (!normalizedQuestionColumns.includes("pool")) {
+    await db.exec("ALTER TABLE questions ADD COLUMN pool TEXT NOT NULL DEFAULT 'main'");
+  }
+  await db.exec(`
+    UPDATE modules
+    SET kind = 'review_incorrect'
+    WHERE title LIKE 'Incorrect question review%';
+    UPDATE modules
+    SET kind = 'review_flagged'
+    WHERE title LIKE 'Flagged question review%';
+  `);
 }
-if (!normalizedModuleColumns.includes("subject")) {
-  await db.exec("ALTER TABLE modules ADD COLUMN subject TEXT NOT NULL DEFAULT 'math'");
-}
-if (!normalizedModuleColumns.includes("pool")) {
-  await db.exec("ALTER TABLE modules ADD COLUMN pool TEXT NOT NULL DEFAULT 'main'");
-}
-if (!normalizedModuleColumns.includes("section_id")) {
-  await db.exec("ALTER TABLE modules ADD COLUMN section_id TEXT");
-}
-if (!normalizedModuleColumns.includes("section_order")) {
-  await db.exec("ALTER TABLE modules ADD COLUMN section_order INTEGER");
-}
-const answerColumns = db
-  .prepare("PRAGMA table_info(module_answers)")
-  .all();
-const normalizedAnswerColumns = (await answerColumns)
-  .map((column) => column.name);
-if (!normalizedAnswerColumns.includes("time_spent_seconds")) {
-  await db.exec("ALTER TABLE module_answers ADD COLUMN time_spent_seconds INTEGER NOT NULL DEFAULT 0");
-}
-const questionColumns = db
-  .prepare("PRAGMA table_info(questions)")
-  .all();
-const normalizedQuestionColumns = (await questionColumns)
-  .map((column) => column.name);
-if (!normalizedQuestionColumns.includes("source")) {
-  await db.exec("ALTER TABLE questions ADD COLUMN source TEXT NOT NULL DEFAULT 'mysatprep'");
-}
-if (!normalizedQuestionColumns.includes("subject")) {
-  await db.exec("ALTER TABLE questions ADD COLUMN subject TEXT NOT NULL DEFAULT 'math'");
-}
-if (!normalizedQuestionColumns.includes("pool")) {
-  await db.exec("ALTER TABLE questions ADD COLUMN pool TEXT NOT NULL DEFAULT 'main'");
-}
-await db.exec(`
-  UPDATE modules
-  SET kind = 'review_incorrect'
-  WHERE title LIKE 'Incorrect question review%';
-  UPDATE modules
-  SET kind = 'review_flagged'
-  WHERE title LIKE 'Flagged question review%';
-`);
 
 const insertQuestion = db.prepare(`
   INSERT INTO questions (
@@ -421,12 +424,12 @@ async function seedVocabulary() {
   });
 }
 
-if (!(await db.prepare("SELECT 1 FROM app_settings WHERE key = 'vocab_seed_version_2026_08' LIMIT 1").get())) {
+if (shouldInitializeDatabase && !(await db.prepare("SELECT 1 FROM app_settings WHERE key = 'vocab_seed_version_2026_08' LIMIT 1").get())) {
   await seedVocabulary();
   await db.prepare("INSERT INTO app_settings (key, value) VALUES ('vocab_seed_version_2026_08', ?)").run(now());
 }
 
-if (!(await db.prepare("SELECT 1 FROM app_settings WHERE key = 'vocab_set_membership_cleanup_v1'").get())) {
+if (shouldInitializeDatabase && !(await db.prepare("SELECT 1 FROM app_settings WHERE key = 'vocab_set_membership_cleanup_v1'").get())) {
   await db.prepare(`
     DELETE FROM vocab_set_items
     WHERE set_id = ?
@@ -435,7 +438,7 @@ if (!(await db.prepare("SELECT 1 FROM app_settings WHERE key = 'vocab_set_member
   await db.prepare("INSERT INTO app_settings (key, value) VALUES ('vocab_set_membership_cleanup_v1', ?)").run(now());
 }
 
-if (!(await db.prepare("SELECT 1 FROM app_settings WHERE key = 'words_only_membership_cleanup_v1'").get())) {
+if (shouldInitializeDatabase && !(await db.prepare("SELECT 1 FROM app_settings WHERE key = 'words_only_membership_cleanup_v1'").get())) {
   await db.prepare(`
     DELETE FROM vocab_set_items
     WHERE set_id = ?

@@ -577,11 +577,18 @@ app.addEventListener("submit", async (event) => {
   }
 });
 
+state.loading = true;
+render();
+
 Promise.resolve()
   .then(loadSets)
   .then(loadDashboard)
   .then(() => {
+    state.loading = false;
     updateVocabUrl();
     render();
   })
-  .catch(setError);
+  .catch((error) => {
+    state.loading = false;
+    setError(error);
+  });
