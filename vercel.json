@@ -1,0 +1,30 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 300
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api/index?__path=:path*"
+    },
+    {
+      "source": "/math",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/english",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/new",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/vocab",
+      "destination": "/index.html"
+    }
+  ]
+}
