@@ -2013,16 +2013,6 @@ function shuffle(values) {
   return output;
 }
 
-function escapeRegExp(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function blankVocabularyTerm(example, term) {
-  const suffix = String(term).includes(" ") ? "" : "(?:s|es|ed|d|ing)?";
-  const pattern = new RegExp(`\\b${escapeRegExp(term)}${suffix}\\b`, "i");
-  return pattern.test(example) ? example.replace(pattern, "_____") : null;
-}
-
 async function vocabSession(kind = "word", requestedLimit = 15, setValue = null) {
   const kindKey = normalizeVocabKind(kind);
   const set = await resolveVocabSet(kindKey, setValue);
@@ -2051,12 +2041,31 @@ async function vocabSession(kind = "word", requestedLimit = 15, setValue = null)
   `).all(kindKey, set.id);
 
   const questions = items.map((item, index) => {
-    const distractors = shuffle(pool.filter((candidate) => candidate.id !== item.id)).slice(0, 3);
+    const shuffledPool = shuffle(pool.filter((candidate) => candidate.id !== item.id));
+    if (kindKey === "word") {
+      const seenDefinitions = new Set([item.definition.trim().toLowerCase()]);
+      const distractors = [];
+      for (const candidate of shuffledPool) {
+        const definitionKey = candidate.definition.trim().toLowerCase();
+        if (!definitionKey || seenDefinitions.has(definitionKey)) continue;
+        seenDefinitions.add(definitionKey);
+        distractors.push(candidate);
+        if (distractors.length === 3) break;
+      }
+      const candidates = [item, ...distractors];
+      return {
+        id: item.id,
+        prompt: "Which definition best matches this word?",
+        clue: item.term,
+        answer: item.definition,
+        options: shuffle(candidates).map((option) => option.definition),
+        optionDetails: Object.fromEntries(candidates.map((option) => [option.definition, option])),
+        item
+      };
+    }
+
+    const distractors = shuffledPool.slice(0, 3);
     const candidates = [item, ...distractors];
-    const contextClue = kindKey === "word" && index % 2 === 0
-      ? blankVocabularyTerm(item.example, item.term)
-      : null;
-    const useContext = Boolean(contextClue);
     const rootToMeaning = kindKey === "root" && index % 2 === 0;
     if (rootToMeaning) {
       return {
@@ -2071,8 +2080,8 @@ async function vocabSession(kind = "word", requestedLimit = 15, setValue = null)
     }
     return {
       id: item.id,
-      prompt: useContext ? "Which choice best completes the sentence?" : kindKey === "root" ? "Which root matches this meaning?" : "Which word or phrase best matches this meaning?",
-      clue: useContext ? contextClue : item.definition,
+      prompt: "Which root matches this meaning?",
+      clue: item.definition,
       answer: item.term,
       options: shuffle(candidates).map((option) => option.term),
       optionDetails: Object.fromEntries(candidates.map((option) => [option.term, option])),

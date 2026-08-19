@@ -352,7 +352,7 @@ function renderQuiz() {
     <main class="vocab-session-shell">
       ${renderSessionHeader(total, progress)}
       <article class="vocab-study-card">
-        <p class="vocab-card-label">${state.kind === "word" ? "Word in context" : "Word roots"}</p>
+        <p class="vocab-card-label">${state.kind === "word" ? "Vocabulary meaning" : "Word roots"}</p>
         <h2>${escapeHtml(question.prompt)}</h2>
         <p class="vocab-clue">${escapeHtml(question.clue)}</p>
         <div class="vocab-options">
@@ -372,16 +372,15 @@ function renderQuiz() {
 function renderQuizFeedback(question) {
   const correct = state.selected === question.answer;
   const selectedDetail = question.optionDetails?.[state.selected];
-  const contextQuestion = question.prompt.includes("completes the sentence");
   if (!correct) {
-    const correctReason = contextQuestion
-      ? `Inserted into the sentence, “${question.item.term}” produces: “${question.item.example}” Its meaning matches the idea required by the surrounding text.`
-      : state.kind === "root"
+    const correctReason = state.kind === "root"
         ? `The root “${question.item.term}” carries the meaning “${question.item.definition}.”`
-        : `The clue asks for a word meaning “${question.clue},” which directly matches “${question.item.term}.”`;
+        : `“${question.item.definition}” is the definition of “${question.item.term}.”`;
     const selectedReason = selectedDetail
-      ? `“${selectedDetail.term}” means “${selectedDetail.definition}.” That meaning does not match what the sentence or clue requires.`
-      : `That choice does not match the meaning required by the sentence or clue.`;
+      ? state.kind === "root"
+        ? `“${selectedDetail.term}” means “${selectedDetail.definition}.” That meaning does not match the clue.`
+        : `“${state.selected}” defines “${selectedDetail.term},” not “${question.item.term}.”`
+      : `That choice does not match the displayed word.`;
     return `
       <section class="vocab-feedback wrong">
         <strong>Answer: ${escapeHtml(question.item.term)}</strong>
