@@ -1,3 +1,5 @@
+import { escapeHtml, requestJson } from "/shared/browser.js";
+
 const app = document.querySelector("#app");
 
 const subjects = {
@@ -91,30 +93,16 @@ function subjectPath(path) {
   return `${path}${separator}subject=${encodeURIComponent(state.subject)}&pool=${encodeURIComponent(state.pool)}`;
 }
 
-async function parseApiResponse(response) {
-  const text = await response.text();
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    throw new Error(`The server returned ${response.status || "an error"} instead of SAT data. Check the deployment's API configuration.`);
-  }
-  if (!response.ok || !data.success) throw new Error(data.error || `Request failed (${response.status}).`);
-  return data.data;
-}
-
 const api = {
   async get(path) {
-    const res = await fetch(subjectPath(path));
-    return parseApiResponse(res);
+    return requestJson(subjectPath(path), {}, { resourceLabel: "SAT data" });
   },
   async post(path, body = {}) {
-    const res = await fetch(path, {
+    return requestJson(path, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ ...body, subject: state.subject, pool: state.pool })
-    });
-    return parseApiResponse(res);
+    }, { resourceLabel: "SAT data" });
   }
 };
 
@@ -157,7 +145,8 @@ async function importQuestions() {
   setBusy(state.pool === "new" ? `Checking for new ${currentSubject().shortLabel} questions` : `Importing ${currentSubject().label} questions`);
   try {
     clearPendingAnswerSaves();
-    state.status = await api.post(state.pool === "new" ? "/api/import-new" : "/api/import", { source: "collegeboard" });
+    await api.post(state.pool === "new" ? "/api/import-new" : "/api/import", { source: "collegeboard" });
+    await loadStatus();
     state.importSource = "collegeboard";
     state.modules = [];
     state.module = null;
@@ -372,6 +361,7 @@ async function flushCurrentTime({ restart = true } = {}) {
   state.localTimeSpent[row.row_id] = total;
   row.time_spent_seconds = total;
   addLocalTimeSegment(row, passIndex, elapsed);
+  const passSeconds = timeSegmentsFor(row).find((segment) => segment.pass_index === passIndex)?.seconds || 0;
   state.questionStartedAt = restart && shouldTrackQuestionTime() ? Date.now() : null;
   state.activeTimePassIndex = restart && shouldTrackQuestionTime() ? passIndex : null;
   try {
@@ -379,7 +369,7 @@ async function flushCurrentTime({ restart = true } = {}) {
       rowId: row.row_id,
       timeSpentSeconds: total,
       passIndex,
-      elapsedSeconds: elapsed
+      passSeconds
     });
   } catch (error) {
     console.warn(error);
@@ -611,9 +601,18 @@ function sanitizeFreeResponse(value) {
 
 function remainingSeconds() {
   if (!state.module?.duration_seconds) return null;
-  const created = new Date(state.module.created_at).getTime();
-  const elapsed = Math.floor((Date.now() - created) / 1000);
+  if (!state.module.started_at) return null;
+  const started = new Date(state.module.started_at).getTime();
+  const elapsed = Math.floor((Date.now() - started) / 1000);
   return state.module.duration_seconds - elapsed;
+}
+
+function isCorrectResult(question) {
+  return question.is_correct === true || question.is_correct === 1;
+}
+
+function isIncorrectResult(question) {
+  return question.is_correct === false || question.is_correct === 0;
 }
 
 function moduleSummary() {
@@ -623,15 +622,6 @@ function moduleSummary() {
     : questions.filter((question) => Boolean(question.answer?.trim())).length;
   const flagged = questions.filter((question) => Boolean(question.module_flagged ?? question.flagged)).length;
   return { answered, unanswered: questions.length - answered, flagged };
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }
 
 function normalizeDisplayHtml(html) {
@@ -668,13 +658,20 @@ function statCard(label, value) {
 
 function renderSubjectTabs() {
   return `
-    <nav class="subject-tabs" aria-label="SAT subject tabs">
-      ${topTabs.map((tab) => `
-        <a class="${tab.key === (state.pool === "new" ? "new" : state.subject) ? "active" : ""}" href="${tab.route}">
-          ${escapeHtml(tab.label)}
-        </a>
-      `).join("")}
-    </nav>
+    <div class="top-navigation">
+      <a class="product-lockup" href="/" aria-label="SAT Practice home">
+        <span class="product-symbol" aria-hidden="true">S</span>
+        <strong>SAT Practice</strong>
+      </a>
+      <nav class="subject-tabs" aria-label="SAT subject tabs">
+        ${topTabs.map((tab) => `
+          <a class="${tab.key === (state.pool === "new" ? "new" : state.subject) ? "active" : ""}" href="${tab.route}" ${tab.key === (state.pool === "new" ? "new" : state.subject) ? 'aria-current="page"' : ""}>
+            ${escapeHtml(tab.label)}
+          </a>
+        `).join("")}
+      </nav>
+      <div class="account-control" data-auth-user-button aria-label="Account"></div>
+    </div>
   `;
 }
 
@@ -694,7 +691,7 @@ function accuracyPercent(correct, answered) {
 
 function renderPerformanceBreakdown() {
   const domains = state.status?.performanceByDomain || [];
-  const buttonLabel = state.showCategoryBreakdown ? "Hide" : "Show";
+  const buttonLabel = state.showCategoryBreakdown ? "Hide details" : "Show details";
 
   if (!state.showCategoryBreakdown) {
     return `
@@ -702,7 +699,7 @@ function renderPerformanceBreakdown() {
         <div class="section-title">
           <div>
             <h2>Category Breakdown</h2>
-            <p>Hidden for now.</p>
+            <p>Correct answers by domain and skill.</p>
           </div>
           <button class="secondary analytics-toggle" data-action="toggle-category-breakdown">${buttonLabel}</button>
         </div>
@@ -785,7 +782,7 @@ function renderHistory() {
               <small>${new Date(module.created_at).toLocaleString()} · ${module.submitted_at ? "Submitted" : "In progress"}</small>
             </span>
             <span class="history-stats">
-              ${module.question_count} Q · ${module.correct} C · ${module.incorrect} I · ${module.flagged} F
+              ${module.question_count} questions · ${module.correct} correct · ${module.incorrect} incorrect · ${module.flagged} flagged
             </span>
           </button>
         `).join("")}
@@ -807,65 +804,55 @@ function renderDashboard() {
   const lockedSatMode = realisticMode || sectionMode || adaptiveMode;
   const cacheLabel = `${formatNumber(cache.cached)}/${formatNumber(cache.total)}`;
   const cachePercent = cache.total ? Math.round((cache.cached / cache.total) * 100) : 0;
+  const answered = Number(status.answered) || 0;
+  const correct = Number(status.correct) || 0;
+  const overallAccuracy = accuracyPercent(correct, answered);
+  const modeOptions = [
+    { value: "random", label: "Random" },
+    ...(newPool ? [{ value: "adaptive", label: "Adaptive section" }] : []),
+    ...(!newPool && subject.supportsRealistic ? [{ value: "realistic", label: "Realistic module" }] : []),
+    ...(!newPool && subject.supportsSection ? [{ value: "section", label: "Full section" }] : [])
+  ];
+  const startLabel = adaptiveMode ? "Start adaptive section" : sectionMode ? "Start full section" : realisticMode ? "Start realistic module" : "Start random practice";
 
   return `
-    <section class="dashboard">
+    <main class="dashboard" id="main-content">
       ${renderSubjectTabs()}
       ${renderNewSubjectSwitch()}
       <div class="toolbar">
         <div>
+          <span class="page-kicker">${escapeHtml(newPool ? "Recently added" : subject.shortLabel)}</span>
           <h1>${escapeHtml(newPool ? `New SAT ${subject.shortLabel} Questions` : subject.title)}</h1>
-          <p>${status.lastImport ? `Last import ${new Date(status.lastImport).toLocaleString()} · ${escapeHtml(status.activeSourceLabel || "")}` : "No local question import yet"}</p>
+          <p>${formatNumber(status.unanswered)} unanswered questions ready to practice.</p>
         </div>
         <div class="toolbar-actions">
-          <button class="secondary" data-action="import">${newPool ? "Check for New Questions" : imported ? "Refresh Import" : "Import Questions"}</button>
           <button class="ghost" data-action="reset">Reset Progress</button>
         </div>
       </div>
 
-      <div class="stats">
-        ${statCard(newPool ? "New Questions" : subject.rowLabel, status.total)}
-        ${newPool ? "" : statCard("Bluebook Excluded", status.excluded)}
-        ${newPool ? "" : statCard("Practice Pool", status.available)}
-        ${statCard("Unanswered", status.unanswered)}
+      <div class="stats overview-stats" aria-label="Practice overview">
+        ${statCard("Accuracy", `${overallAccuracy}%`)}
         ${statCard("Answered", status.answered)}
-        ${statCard("Correct", status.correct)}
-        ${statCard("Incorrect", status.incorrect)}
+        ${statCard("Unanswered", status.unanswered)}
         ${statCard("Flagged", status.flagged)}
-        ${statCard("Content Cached", cacheLabel)}
       </div>
 
-      <section class="cache-panel">
-        <div>
-          <h2>Offline Cache</h2>
-          <p>${cacheJob.running
-            ? `Caching ${formatNumber(cacheJob.completed)} / ${formatNumber(cacheJob.total)} · current ${escapeHtml(cacheJob.current || "")}`
-            : `${cachePercent}% cached · ${formatNumber(cache.remaining)} remaining`}</p>
-          ${cacheJob.error ? `<p class="cache-error">Last issue: ${escapeHtml(cacheJob.error)}</p>` : ""}
-        </div>
-        <button class="secondary" data-action="cache-all" ${imported && !cacheJob.running && cache.remaining ? "" : "disabled"}>
-          ${cacheJob.running ? "Caching..." : cache.remaining ? "Cache All Questions" : "Fully Cached"}
-        </button>
-      </section>
-
       ${renderPerformanceBreakdown()}
-      <div class="module-panel">
+
+      <section class="module-panel" aria-labelledby="practice-builder-title">
+        <div class="module-panel-heading">
+          <div>
+            <span class="section-kicker">Practice</span>
+            <h2 id="practice-builder-title">Build a practice test</h2>
+          </div>
+          <span class="source-badge">College Board</span>
+        </div>
+        <div class="mode-segments" role="group" aria-label="Practice mode">
+          ${modeOptions.map((mode) => `
+            <button type="button" class="${state.moduleOptions.mode === mode.value ? "active" : ""}" data-mode-option="${mode.value}" aria-pressed="${state.moduleOptions.mode === mode.value}">${escapeHtml(mode.label)}</button>
+          `).join("")}
+        </div>
         <div class="field-group">
-          <label>
-            Module Mode
-            <select data-option="mode">
-              <option value="random" ${state.moduleOptions.mode === "random" ? "selected" : ""}>Random</option>
-              ${newPool ? `<option value="adaptive" ${adaptiveMode ? "selected" : ""}>Adaptive Section</option>` : ""}
-              ${!newPool && subject.supportsRealistic ? `<option value="realistic" ${realisticMode ? "selected" : ""}>Realistic SAT</option>` : ""}
-              ${!newPool && subject.supportsSection ? `<option value="section" ${sectionMode ? "selected" : ""}>Section</option>` : ""}
-            </select>
-          </label>
-          <label>
-            Source
-            <select data-option="importSource" disabled>
-              <option value="collegeboard" selected>College Board official</option>
-            </select>
-          </label>
           <label>
             Questions
             <input data-option="count" type="number" min="1" max="98" value="${lockedSatMode ? subject.defaultCount : state.moduleOptions.count}" ${lockedSatMode ? "disabled" : ""}>
@@ -880,13 +867,35 @@ function renderDashboard() {
           </label>
         </div>
         <div class="module-panel-actions">
-          <button class="primary" data-action="create-module" ${imported ? "" : "disabled"}>${adaptiveMode ? "New Adaptive Section" : sectionMode ? "New Section" : realisticMode ? "New Realistic Module" : "New Module"}</button>
-          <button class="secondary" data-action="review-incorrect" ${status.incorrect ? "" : "disabled"}>Review Incorrect</button>
-          <button class="secondary" data-action="review-flagged" ${status.flagged ? "" : "disabled"}>Review Flagged</button>
+          ${imported
+            ? `<button class="primary start-practice" data-action="create-module">${startLabel}</button>`
+            : status.canManageCatalog
+              ? `<button class="primary start-practice" data-action="import">Import question catalog</button>`
+              : `<button class="primary start-practice" disabled>Question catalog unavailable</button>`}
+          <div class="review-actions" aria-label="Question review">
+            <button class="secondary" data-action="review-incorrect" ${status.incorrect ? "" : "disabled"}>Review ${formatNumber(status.incorrect)} incorrect</button>
+            <button class="secondary" data-action="review-flagged" ${status.flagged ? "" : "disabled"}>Review ${formatNumber(status.flagged)} flagged</button>
+          </div>
         </div>
-      </div>
+      </section>
+
       ${renderHistory()}
-    </section>
+
+      ${status.canManageCatalog ? `<details class="catalog-details">
+        <summary>Question catalog</summary>
+        <div class="catalog-content">
+          <div>
+            <strong>${formatNumber(status.total)} questions · ${cacheLabel} cached</strong>
+            <p>${status.lastImport ? `Updated ${new Date(status.lastImport).toLocaleString()} · ${escapeHtml(status.activeSourceLabel || "College Board")}` : "No question catalog imported yet"}</p>
+            ${cacheJob.error ? `<p class="cache-error">Last issue: ${escapeHtml(cacheJob.error)}</p>` : ""}
+          </div>
+          <div class="catalog-actions">
+            <button class="secondary" data-action="import">${newPool ? "Check for new questions" : imported ? "Refresh import" : "Import questions"}</button>
+            <button class="secondary" data-action="cache-all" ${imported && !cacheJob.running && cache.remaining ? "" : "disabled"}>${cacheJob.running ? `Caching ${formatNumber(cacheJob.completed)}/${formatNumber(cacheJob.total)}` : cache.remaining ? `Cache remaining (${cachePercent}%)` : "Fully cached"}</button>
+          </div>
+        </div>
+      </details>` : ""}
+    </main>
   `;
 }
 
@@ -898,13 +907,17 @@ function renderModuleHeader() {
   const hasResults = Boolean(state.module.submitted_at) && state.module.kind === "practice";
 
   return `
-    <section class="module-header">
-      <div>
+    <header class="module-header">
+      <div class="module-identity">
+        <button class="ghost back-button" data-action="back-dashboard" aria-label="Return to dashboard" title="Return to dashboard">←</button>
+        <div>
+          <span class="section-kicker">${escapeHtml(currentSubject().shortLabel)}</span>
         <h2>${escapeHtml(state.module.title)}</h2>
         <p>${summary.answered} answered · ${summary.unanswered} unanswered · ${summary.flagged} flagged</p>
+        </div>
       </div>
       <div class="module-actions">
-        ${remaining !== null && !submitted ? `<span class="timer">${formatTime(remaining)}</span>` : ""}
+        ${remaining !== null && !submitted ? `<span class="timer" aria-label="Time remaining">${formatTime(remaining)}</span>` : ""}
         ${submitted ? `
           <label class="check review-toggle">
             <input data-action="toggle-hide-answers" type="checkbox" ${state.reviewHideAnswers ? "checked" : ""}>
@@ -914,9 +927,9 @@ function renderModuleHeader() {
         ${currentSubject().referenceSheet ? `<button class="secondary" data-action="show-reference">Reference</button>` : ""}
         ${hasResults ? `<button class="secondary" data-action="show-results">Results</button>` : ""}
         ${!submitted ? `<button class="secondary" data-action="review">Review</button>` : ""}
-        <button class="ghost" data-action="back-dashboard">Dashboard</button>
       </div>
-    </section>
+      <div class="module-progress-track" aria-hidden="true"><span style="width:${((state.currentIndex + 1) / state.module.questions.length) * 100}%"></span></div>
+    </header>
   `;
 }
 
@@ -928,12 +941,14 @@ function renderNav() {
         const answered = Boolean(question.answer?.trim());
         const flagged = Boolean(question.module_flagged ?? question.flagged);
         const active = index === state.currentIndex;
-        const resultClass = question.is_correct === 1 ? " correct" : question.is_correct === 0 ? " incorrect" : "";
+        const resultClass = isCorrectResult(question) ? " correct" : isIncorrectResult(question) ? " incorrect" : "";
         return `
           <button
             class="${active ? "active" : ""} ${answered ? "answered" : ""} ${flagged ? "flagged" : ""}${resultClass}"
             data-jump="${index}"
             title="Question ${index + 1}"
+            aria-label="Question ${index + 1}${answered ? ", answered" : ", unanswered"}${flagged ? ", flagged" : ""}"
+            ${active ? 'aria-current="step"' : ""}
           >
             ${index + 1}
           </button>
@@ -971,7 +986,7 @@ function renderQuestionBody() {
         </div>
         <div class="question-actions">
           ${isIncorrectReviewModule() ? `<button class="secondary danger-soft" data-action="remove-incorrect">Remove from Incorrect</button>` : ""}
-          <button class="${flagged ? "flag-on" : "secondary"}" data-action="toggle-flag">${flagged ? "Flagged" : "Flag"}</button>
+          <button class="${flagged ? "flag-on" : "secondary"}" data-action="toggle-flag" aria-pressed="${flagged}">${flagged ? "Flagged" : "Flag"}</button>
         </div>
       </header>
 
@@ -1011,7 +1026,7 @@ function renderOptions(row, content, answer, revealAnswers) {
               aria-label="${eliminated ? "Restore" : "Cross out"} answer ${escapeHtml(key)}"
               title="${eliminated ? "Restore answer" : "Cross out answer"}"
             >
-              ${eliminated ? "Undo" : "Cross out"}
+              <span aria-hidden="true">ABC</span>
             </button>
           </label>
         `;
@@ -1057,8 +1072,8 @@ function renderQuestionFooter() {
   const last = state.currentIndex === state.module.questions.length - 1;
   return `
     <footer class="question-footer">
-      <button class="secondary" data-action="prev" ${first ? "disabled" : ""}>Previous</button>
-      <button class="secondary" data-action="next" ${last ? "disabled" : ""}>Next</button>
+      <button class="secondary" data-action="prev" ${first ? "disabled" : ""}>← Previous</button>
+      <button class="primary" data-action="next" ${last ? "disabled" : ""}>Next →</button>
     </footer>
   `;
 }
@@ -1067,10 +1082,13 @@ function renderReview() {
   if (!state.reviewOpen || !state.module) return "";
   return `
     <section class="overlay">
-      <div class="dialog">
+      <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="review-dialog-title">
         <header>
-          <h2>Review</h2>
-          <button class="ghost icon" data-action="close-review">×</button>
+          <div>
+            <span class="section-kicker">Before submission</span>
+            <h2 id="review-dialog-title">Review your answers</h2>
+          </div>
+          <button class="ghost icon" data-action="close-review" aria-label="Close review" title="Close review">×</button>
         </header>
         <div class="review-grid">
           ${state.module.questions.map((question, index) => {
@@ -1095,16 +1113,19 @@ function renderReview() {
 
 function renderResults() {
   if (!state.resultsOpen || !isReviewMode()) return "";
-  const correct = state.module.questions.filter((question) => question.is_correct === 1).length;
-  const incorrect = state.module.questions.filter((question) => question.is_correct === 0).length;
+  const correct = state.module.questions.filter(isCorrectResult).length;
+  const incorrect = state.module.questions.filter(isIncorrectResult).length;
   const skipped = state.module.questions.filter((question) => question.status === "skipped").length;
 
   return `
     <section class="overlay">
-      <div class="dialog">
+      <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="results-dialog-title">
         <header>
-          <h2>Results</h2>
-          <button class="ghost icon" data-action="close-results">×</button>
+          <div>
+            <span class="section-kicker">Module complete</span>
+            <h2 id="results-dialog-title">Results</h2>
+          </div>
+          <button class="ghost icon" data-action="close-results" aria-label="Close results" title="Close results">×</button>
         </header>
         <div class="stats compact">
           ${statCard("Correct", correct)}
@@ -1115,7 +1136,7 @@ function renderResults() {
           ${state.module.questions.map((question, index) => {
             const label = question.status || "skipped";
             return `
-              <button data-jump="${index}" class="${question.is_correct === 1 ? "correct" : question.is_correct === 0 ? "incorrect" : ""}">
+              <button data-jump="${index}" class="${isCorrectResult(question) ? "correct" : isIncorrectResult(question) ? "incorrect" : ""}">
                 <strong>${index + 1}</strong>
                 <span>${label} · ${formatQuestionTime(question)}</span>
               </button>
@@ -1134,10 +1155,10 @@ function renderReferenceSheet() {
   if (!state.referenceOpen) return "";
   return `
     <section class="overlay">
-      <div class="dialog reference-dialog">
+      <div class="dialog reference-dialog" role="dialog" aria-modal="true" aria-labelledby="reference-dialog-title">
         <header>
-          <h2>Reference Sheet</h2>
-          <button class="ghost icon" data-action="close-reference">×</button>
+          <h2 id="reference-dialog-title">Reference sheet</h2>
+          <button class="ghost icon" data-action="close-reference" aria-label="Close reference sheet" title="Close reference sheet">×</button>
         </header>
         <div class="reference-image-wrap">
           <img src="/reference_sheet.png" alt="SAT math reference sheet">
@@ -1153,14 +1174,12 @@ function renderReferenceSheet() {
 function renderModule() {
   if (!state.module) return "";
   return `
-    <main class="module-shell">
+    <main class="module-shell" id="main-content">
       ${renderModuleHeader()}
-      <div class="practice-layout">
-        ${renderNav()}
-        <div>
+      ${renderNav()}
+      <div class="question-stage">
           ${renderQuestionBody()}
           ${renderQuestionFooter()}
-        </div>
       </div>
       ${renderReview()}
       ${renderResults()}
@@ -1171,10 +1190,9 @@ function renderModule() {
 
 function render() {
   app.innerHTML = `
-    ${state.loading ? `<div class="busy">${escapeHtml(state.busyMessage)}</div>` : ""}
-    ${state.error ? `<div class="error">${escapeHtml(state.error)}</div>` : ""}
-    ${renderDashboard()}
-    ${renderModule()}
+    ${state.loading ? `<div class="busy" role="status" aria-live="polite">${escapeHtml(state.busyMessage)}</div>` : ""}
+    ${state.error ? `<div class="error" role="alert">${escapeHtml(state.error)}</div>` : ""}
+    ${state.module ? renderModule() : renderDashboard()}
   `;
 }
 
@@ -1251,6 +1269,14 @@ app.addEventListener("input", async (event) => {
 });
 
 app.addEventListener("click", async (event) => {
+  const modeButton = event.target.closest("[data-mode-option]");
+  if (modeButton) {
+    updateOption({ dataset: { option: "mode" }, value: modeButton.dataset.modeOption });
+    render();
+    requestAnimationFrame(() => document.querySelector(`[data-mode-option="${state.moduleOptions.mode}"]`)?.focus());
+    return;
+  }
+
   const openModuleButton = event.target.closest("[data-open-module]");
   if (openModuleButton) {
     await openModule(Number(openModuleButton.dataset.openModule));

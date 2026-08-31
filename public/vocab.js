@@ -1,3 +1,5 @@
+import { escapeHtml, requestJson } from "/shared/browser.js";
+
 const app = document.querySelector("#app");
 
 const state = {
@@ -18,31 +20,14 @@ const state = {
   loading: false,
   error: "",
   notice: "",
-  search: ""
+  search: "",
+  reviewRequestId: ""
 };
 
 document.title = "SAT Vocabulary";
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
 async function request(path, options = {}) {
-  const response = await fetch(path, options);
-  const text = await response.text();
-  let payload;
-  try {
-    payload = JSON.parse(text);
-  } catch {
-    throw new Error(`The server returned ${response.status || "an error"} instead of vocabulary data. Check the deployment's API configuration.`);
-  }
-  if (!response.ok || !payload.success) throw new Error(payload.error || `Request failed (${response.status}).`);
-  return payload.data;
+  return requestJson(path, options, { resourceLabel: "vocabulary data" });
 }
 
 async function get(path) {
@@ -135,6 +120,7 @@ async function startSession(type) {
     state.revealed = false;
     state.correct = 0;
     state.missed = 0;
+    state.reviewRequestId = crypto.randomUUID();
     state.view = "session";
   } catch (error) {
     setError(error);
@@ -163,7 +149,8 @@ async function answerQuiz(option) {
     const result = await post("/api/vocab/review", {
       itemId: question.id,
       setId: state.setId,
-      rating: isCorrect ? "good" : "again"
+      rating: isCorrect ? "good" : "again",
+      requestId: state.reviewRequestId
     });
     state.dashboard = result.dashboard;
   } catch (error) {
@@ -179,7 +166,12 @@ async function rateRecall(rating) {
   else state.correct += 1;
   render();
   try {
-    const result = await post("/api/vocab/review", { itemId: item.id, setId: state.setId, rating });
+    const result = await post("/api/vocab/review", {
+      itemId: item.id,
+      setId: state.setId,
+      rating,
+      requestId: state.reviewRequestId
+    });
     state.dashboard = result.dashboard;
     nextCard();
   } catch (error) {
@@ -199,6 +191,7 @@ function nextCard() {
   state.selected = "";
   state.answered = false;
   state.revealed = false;
+  state.reviewRequestId = crypto.randomUUID();
   render();
 }
 
@@ -231,12 +224,19 @@ async function addWord(form) {
 
 function renderTopNav() {
   return `
-    <nav class="subject-tabs" aria-label="SAT study tabs">
-      <a href="/">Math</a>
-      <a href="/english">English</a>
-      <a href="/new">New Questions</a>
-      <a class="active" href="/vocab">Vocab</a>
-    </nav>
+    <div class="top-navigation">
+      <a class="product-lockup" href="/" aria-label="SAT Practice home">
+        <span class="product-symbol vocab-symbol" aria-hidden="true">S</span>
+        <strong>SAT Practice</strong>
+      </a>
+      <nav class="subject-tabs" aria-label="SAT study tabs">
+        <a href="/">Math</a>
+        <a href="/english">English</a>
+        <a href="/new">New Questions</a>
+        <a class="active" href="/vocab" aria-current="page">Vocab</a>
+      </nav>
+      <div class="account-control" data-auth-user-button aria-label="Account"></div>
+    </div>
   `;
 }
 
@@ -255,7 +255,7 @@ function renderSetSelector() {
     <section class="vocab-set-selector" aria-label="Vocabulary sets">
       <div class="vocab-set-heading">
         <span>Word set</span>
-        <strong>Study progress is tracked separately</strong>
+        <strong>${escapeHtml(state.sets.find((set) => String(set.id) === String(state.setId))?.name || "Choose a set")}</strong>
       </div>
       <div class="vocab-set-options">
         ${state.sets.map((set) => `
@@ -277,17 +277,38 @@ function renderDashboard() {
   const metrics = state.dashboard || {};
   const label = state.kind === "word" ? "Words" : "Roots";
   return `
-    <main class="vocab-shell">
+    <main class="vocab-shell" id="main-content">
       ${renderTopNav()}
       <header class="vocab-toolbar">
         <div>
           <p class="vocab-eyebrow">SAT Reading & Writing</p>
           <h1>Vocabulary</h1>
+          <p>${metrics.due || 0} ${label.toLowerCase()} ready for review.</p>
         </div>
-        <button class="secondary" data-action="library">Library</button>
+        <button class="secondary" data-action="library">Open library</button>
       </header>
       ${renderKindTabs()}
       ${renderSetSelector()}
+      <section class="study-actions">
+        <div class="study-action-main">
+          <div>
+            <span>Up next</span>
+            <h2>Study ${Math.min(15, Math.max(1, Number(metrics.due) || 15))} ${label.toLowerCase()}</h2>
+            <p>Multiple-choice meaning practice</p>
+          </div>
+          <button class="primary" data-action="start-quiz">Start review</button>
+        </div>
+        <div class="study-secondary-actions">
+          <button class="study-action-secondary" data-action="start-recall">
+            <span>Recall cards</span>
+            <strong>Reveal and rate</strong>
+          </button>
+          <button class="study-action-secondary" data-action="library">
+            <span>Browse library</span>
+            <strong>${metrics.total || 0} ${label.toLowerCase()}</strong>
+          </button>
+        </div>
+      </section>
       <section class="vocab-stats" aria-label="${label} progress">
         ${stat("Due", metrics.due || 0, "due")}
         ${stat("New", metrics.new || 0)}
@@ -296,23 +317,6 @@ function renderDashboard() {
         ${stat("Today", metrics.reviewedToday || 0)}
         ${stat("Accuracy", `${metrics.accuracy || 0}%`)}
       </section>
-      <section class="study-actions">
-        <div class="study-action-main">
-          <div>
-            <span>${label}</span>
-            <h2>Daily review</h2>
-          </div>
-          <button class="primary" data-action="start-quiz">Start 15</button>
-        </div>
-        <button class="study-action-secondary" data-action="start-recall">
-          <span>Recall cards</span>
-          <strong>Reveal and rate</strong>
-        </button>
-        <button class="study-action-secondary" data-action="library">
-          <span>Browse</span>
-          <strong>${metrics.total || 0} ${label.toLowerCase()}</strong>
-        </button>
-      </section>
       ${state.kind === "word" ? renderAddWord() : renderRootFamilies()}
     </main>
   `;
@@ -320,17 +324,15 @@ function renderDashboard() {
 
 function renderAddWord() {
   return `
-    <section class="vocab-add-panel">
-      <div class="vocab-section-heading">
-        <div><span>Library</span><h2>Add a word</h2></div>
-      </div>
+    <details class="vocab-add-panel">
+      <summary>Add a word</summary>
       <form id="add-word-form" class="vocab-form">
         <label>Word or phrase<input name="term" maxlength="100" required></label>
         <label>Definition<textarea name="definition" maxlength="600" rows="2" required></textarea></label>
         <label>Example sentence<textarea name="example" maxlength="800" rows="2"></textarea></label>
         <button class="primary" type="submit">Add word</button>
       </form>
-    </section>
+    </details>
   `;
 }
 
@@ -349,7 +351,7 @@ function renderQuiz() {
   const total = state.session.questions.length;
   const progress = ((state.currentIndex + 1) / total) * 100;
   return `
-    <main class="vocab-session-shell">
+    <main class="vocab-session-shell" id="main-content">
       ${renderSessionHeader(total, progress)}
       <article class="vocab-study-card">
         <p class="vocab-card-label">${state.kind === "word" ? "Vocabulary meaning" : "Word roots"}</p>
@@ -418,7 +420,7 @@ function renderRecall() {
   const total = state.session.items.length;
   const progress = ((state.currentIndex + 1) / total) * 100;
   return `
-    <main class="vocab-session-shell">
+    <main class="vocab-session-shell" id="main-content">
       ${renderSessionHeader(total, progress)}
       <article class="vocab-study-card recall-card">
         <p class="vocab-card-label">${state.kind === "root" ? "Root" : "Recall the meaning"}</p>
@@ -443,7 +445,7 @@ function renderRecall() {
 function renderSessionHeader(total, progress) {
   return `
     <header class="vocab-session-header">
-      <button class="ghost" data-action="end-session">Exit</button>
+      <button class="ghost" data-action="end-session">← Exit</button>
       <div class="vocab-progress-track"><span style="width:${progress}%"></span></div>
       <strong>${state.currentIndex + 1}/${total}</strong>
     </header>
@@ -452,7 +454,7 @@ function renderSessionHeader(total, progress) {
 
 function renderEmptySession() {
   return `
-    <main class="vocab-session-shell">
+    <main class="vocab-session-shell" id="main-content">
       <section class="vocab-empty">
         <h2>Nothing is due right now</h2>
         <button class="primary" data-action="end-session">Back to vocabulary</button>
@@ -464,7 +466,7 @@ function renderEmptySession() {
 function renderComplete() {
   const total = state.correct + state.missed;
   return `
-    <main class="vocab-session-shell">
+    <main class="vocab-session-shell" id="main-content">
       <section class="vocab-complete">
         <span>Session complete</span>
         <h1>${state.correct}/${total}</h1>
@@ -477,11 +479,11 @@ function renderComplete() {
 
 function renderLibrary() {
   return `
-    <main class="vocab-shell">
+    <main class="vocab-shell" id="main-content">
       ${renderTopNav()}
       <header class="vocab-toolbar">
-        <div><p class="vocab-eyebrow">${state.kind === "word" ? "Words" : "Roots"}</p><h1>Library</h1></div>
-        <button class="secondary" data-action="dashboard">Dashboard</button>
+        <div><p class="vocab-eyebrow">${state.kind === "word" ? "Words" : "Roots"}</p><h1>Library</h1><p>${state.items.length} items in this view.</p></div>
+        <button class="secondary" data-action="dashboard">Back to study</button>
       </header>
       ${renderKindTabs()}
       ${renderSetSelector()}
@@ -508,9 +510,9 @@ function renderLibrary() {
 
 function render() {
   app.innerHTML = `
-    ${state.loading ? `<div class="busy">Loading vocabulary</div>` : ""}
-    ${state.error ? `<div class="error">${escapeHtml(state.error)}</div>` : ""}
-    ${state.notice ? `<div class="vocab-notice">${escapeHtml(state.notice)}</div>` : ""}
+    ${state.loading ? `<div class="busy" role="status" aria-live="polite">Loading vocabulary</div>` : ""}
+    ${state.error ? `<div class="error" role="alert">${escapeHtml(state.error)}</div>` : ""}
+    ${state.notice ? `<div class="vocab-notice" role="status" aria-live="polite">${escapeHtml(state.notice)}</div>` : ""}
     ${state.view === "session" ? (state.sessionType === "quiz" ? renderQuiz() : renderRecall()) : ""}
     ${state.view === "complete" ? renderComplete() : ""}
     ${state.view === "library" ? renderLibrary() : ""}

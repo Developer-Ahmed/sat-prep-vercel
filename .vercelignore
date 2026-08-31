@@ -1,0 +1,11 @@
+.agents/
+.github/
+.neon
+data/
+docs/
+test/
+.env*
+DATABASE.md
+DEPLOY.md
+SECURITY.md
+skills-lock.json

@@ -1,11 +1,25 @@
 {
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.5"
+  },
   "dependencies": {
-    "@libsql/client": "^0.15.15"
+    "@clerk/backend": "3.16.13",
+    "@neondatabase/serverless": "1.1.0",
+    "sanitize-html": "2.17.7",
+    "zod": "4.5.2"
   },
   "scripts": {
     "start": "node --no-warnings server/index.js",
-    "dev": "node --no-warnings server/index.js"
+    "dev": "node --no-warnings --env-file-if-exists=.env.local server/index.js",
+    "db:migrate": "node --no-warnings --env-file-if-exists=.env.local scripts/migrate.js",
+    "db:grant-runtime": "node --no-warnings --env-file-if-exists=.env.local scripts/grant-runtime.js",
+    "catalog:import": "node --no-warnings --env-file-if-exists=.env.local scripts/import-question-catalog.js",
+    "db:seed:reference": "node --no-warnings --env-file-if-exists=.env.local scripts/seed-reference-data.js",
+    "db:reset:preproduction": "node --no-warnings --env-file-if-exists=.env.local scripts/reset-preproduction.js",
+    "test": "node --test",
+    "test:integration": "node --no-warnings --env-file-if-exists=.env.test --test test/neon.integration.test.js",
+    "verify": "node scripts/verify.js"
   }
 }

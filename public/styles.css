@@ -113,10 +113,138 @@ button:disabled {
   margin: 24px auto;
 }
 
+.top-navigation {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.account-control {
+  align-items: center;
+  display: flex;
+  flex: 0 0 32px;
+  min-height: 42px;
+}
+
 .subject-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 14px;
+  min-width: 0;
+}
+
+.auth-page {
+  align-items: center;
+  display: grid;
+  gap: 48px;
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 460px);
+  margin: 0 auto;
+  min-height: 100vh;
+  padding: 40px;
+  width: min(1080px, 100%);
+}
+
+.auth-intro h1,
+.auth-message h1 {
+  font-size: 48px;
+  line-height: 1.08;
+  margin: 18px 0 14px;
+}
+
+.auth-intro p,
+.auth-message p {
+  color: var(--muted);
+  font-size: 18px;
+  max-width: 580px;
+}
+
+.auth-welcome {
+  grid-template-columns: minmax(0, 680px);
+  justify-content: center;
+}
+
+.auth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.auth-message .auth-actions {
+  justify-content: center;
+}
+
+.auth-action {
+  align-items: center;
+  border-radius: 7px;
+  display: inline-flex;
+  font-weight: 800;
+  justify-content: center;
+  min-height: 46px;
+  min-width: 142px;
+  padding: 0 20px;
+  text-decoration: none;
+}
+
+.auth-action.primary:hover {
+  background: var(--blue-dark);
+}
+
+.auth-mark {
+  background: var(--blue);
+  border-radius: 7px;
+  color: white;
+  display: inline-grid;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0;
+  padding: 7px 10px;
+  place-items: center;
+}
+
+.auth-panel {
+  display: grid;
+  min-height: 520px;
+  place-items: center;
+}
+
+.auth-message {
+  grid-column: 1 / -1;
+  margin: auto;
+  max-width: 680px;
+  text-align: center;
+  width: 100%;
+}
+
+@media (max-width: 760px) {
+  .auth-page {
+    gap: 20px;
+    grid-template-columns: 1fr;
+    padding: 28px 16px;
+  }
+
+  .auth-intro {
+    text-align: center;
+  }
+
+  .auth-intro h1,
+  .auth-message h1 {
+    font-size: 34px;
+  }
+
+  .auth-intro p {
+    margin-inline: auto;
+  }
+
+  .auth-actions {
+    justify-content: center;
+  }
+
+  .auth-panel {
+    min-height: 460px;
+  }
 }
 
 .subject-tabs a {
@@ -441,7 +569,7 @@ h3 {
 }
 
 .skill-meter span {
-  background: linear-gradient(90deg, var(--blue), var(--green));
+  background: var(--blue);
   display: block;
   height: 100%;
 }
@@ -647,7 +775,7 @@ input[type="number"] {
   display: block;
   font-size: 12px;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   margin-bottom: 3px;
   text-transform: uppercase;
 }

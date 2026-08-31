@@ -3,12 +3,20 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
     <title>SAT Math Practice</title>
     <link rel="stylesheet" href="/styles.css">
     <link rel="stylesheet" href="/vocab.css">
+    <link rel="stylesheet" href="/design.css">
   </head>
   <body>
-    <div id="app"></div>
-    <script type="module" src="/router.js"></script>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <div id="app">
+      <main class="boot-screen" id="main-content" aria-live="polite">
+        <span class="auth-mark" aria-hidden="true">SAT</span>
+        <p>Loading your workspace</p>
+      </main>
+    </div>
+    <script type="module" src="/auth.js"></script>
   </body>
 </html>
