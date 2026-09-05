@@ -28,8 +28,8 @@
   ],
   "rewrites": [
     {
-      "source": "/__clerk/:path*",
-      "destination": "/api/clerk?__clerk_path=:path*"
+      "source": "/__clerk/:__clerk_path*",
+      "destination": "/api/clerk"
     },
     {
       "source": "/api/:path*",

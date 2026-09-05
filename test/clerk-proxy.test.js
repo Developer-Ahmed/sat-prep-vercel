@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { Readable, Writable } from "node:stream";
 import {
   CLERK_PROXY_PATH,
@@ -65,6 +66,16 @@ test("proxy URL restoration preserves Clerk paths and ordinary query parameters"
   assert.throws(() => restoreProxyRequestUrl("/api/clerk?__clerk_path=..%2Fsecret"), /invalid/);
   assert.throws(() => restoreProxyRequestUrl("/api/clerk?__clerk_path=v1%5Csecret"), /invalid/);
   assert.throws(() => restoreProxyRequestUrl("/api/clerk?__clerk_path=v1%3Ftarget%3Dother"), /invalid/);
+});
+
+test("Vercel forwards the Clerk path under the private routing parameter only", async () => {
+  const config = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
+  const rewrite = config.rewrites.find(({ source }) => source.startsWith("/__clerk/"));
+
+  assert.deepEqual(rewrite, {
+    source: "/__clerk/:__clerk_path*",
+    destination: "/api/clerk"
+  });
 });
 
 test("proxy settings require the exact dedicated path", () => {
