@@ -1,20 +1,16 @@
 import { escapeHtml } from "/shared/browser.js";
+import {
+  SIGN_IN_PATH,
+  clerkLoadOptions,
+  isAuthenticationPath,
+  isKnownPath,
+  isProtectedPath,
+  subscribeToSignOut
+} from "/shared/auth-runtime.js";
 
 const app = document.querySelector("#app");
-const protectedPaths = new Set(["/", "/english", "/new", "/vocab"]);
 const CLERK_JS_VERSION = "6.29.3";
 const CLERK_UI_VERSION = "1.29.1";
-
-function isAuthenticationPath(pathname) {
-  return pathname === "/sign-in"
-    || pathname.startsWith("/sign-in/")
-    || pathname === "/sign-up"
-    || pathname.startsWith("/sign-up/");
-}
-
-function isKnownPath(pathname) {
-  return protectedPaths.has(pathname) || isAuthenticationPath(pathname);
-}
 
 function renderMessage(title, detail) {
   app.innerHTML = `
@@ -67,14 +63,14 @@ async function loadClerk(config) {
   await loadScript(`${base}/npm/@clerk/clerk-js@${CLERK_JS_VERSION}/dist/clerk.browser.js`, {
     ...clerkAttributes
   });
-  await window.Clerk.load({
-    ui: { ClerkUI: window.__internal_ClerkUICtor },
-    ...(proxyUrl ? { proxyUrl } : {})
-  });
+  await window.Clerk.load(clerkLoadOptions({
+    ClerkUI: window.__internal_ClerkUICtor,
+    proxyUrl
+  }));
 }
 
 function renderAuthentication() {
-  if (protectedPaths.has(window.location.pathname)) {
+  if (isProtectedPath(window.location.pathname)) {
     app.innerHTML = `
       <main class="auth-page auth-welcome" id="main-content">
         <section class="auth-intro">
@@ -140,9 +136,15 @@ function mountUserButton() {
   if (!target || target === mountedUserButton || !window.Clerk?.isSignedIn) return;
   mountedUserButton = target;
   window.Clerk.mountUserButton(target, {
-    afterSignOutUrl: window.location.origin,
     appearance: { elements: { avatarBox: { width: "32px", height: "32px" } } }
   });
+}
+
+function monitorSignOut() {
+  const unsubscribe = subscribeToSignOut(window.Clerk, () => {
+    window.location.replace(SIGN_IN_PATH);
+  });
+  window.addEventListener("pagehide", unsubscribe, { once: true });
 }
 
 async function start() {
@@ -170,7 +172,7 @@ async function start() {
       return;
     }
 
-    window.satPrepAuth = Object.freeze({ userId: window.Clerk.user.id });
+    monitorSignOut();
     const observer = new MutationObserver(mountUserButton);
     observer.observe(app, { childList: true, subtree: true });
     await import("/router.js");

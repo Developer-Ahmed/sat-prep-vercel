@@ -1,3 +1,5 @@
+import { SIGN_IN_PATH } from "./auth-runtime.js";
+
 export function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -8,7 +10,7 @@ export function escapeHtml(value) {
 }
 
 function redirectToSignIn() {
-  window.location.assign("/sign-in");
+  window.location.assign(SIGN_IN_PATH);
 }
 
 export async function parseJsonResponse(response, {

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { extname, join } from "node:path";
+import { isKnownPath as isKnownAppRoute } from "../public/shared/auth-runtime.js";
 import * as clerkAuth from "./auth.js";
 import { errorPayload, HttpError } from "./platform/http.js";
 import { applySecurityHeaders, enforceTrustedOrigin } from "./platform/security.js";
@@ -14,12 +15,6 @@ import { createUserService } from "./modules/users/service.js";
 import { createUserRoutes } from "./modules/users/routes.js";
 import { errorLogFields, logEvent, requestIdFor } from "./observability.js";
 import { resolvePublicPath } from "./static-path.js";
-
-const APP_ROUTES = new Set(["/", "/math", "/english", "/new", "/vocab", "/sign-in", "/sign-up"]);
-
-function isKnownAppRoute(pathname) {
-  return APP_ROUTES.has(pathname) || pathname.startsWith("/sign-in/") || pathname.startsWith("/sign-up/");
-}
 
 export function createApplication({ db, publicDir, auth = clerkAuth, logger = logEvent }) {
   if (!db) throw new Error("A database adapter is required.");
