@@ -48,7 +48,7 @@ GRANT SELECT ON question_catalog TO sat_app;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON progress TO sat_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON test_sessions, test_modules, module_questions TO sat_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON module_responses, response_time_segments TO sat_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON response_time_segments TO sat_app;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON vocab_items TO sat_app;
 GRANT SELECT ON vocab_sets, vocab_set_items TO sat_app;

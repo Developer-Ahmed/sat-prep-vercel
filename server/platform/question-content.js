@@ -12,7 +12,7 @@ const allowedTags = [
 
 const svgAttributes = [
   "clip-path", "cx", "cy", "d", "dominant-baseline", "dx", "dy", "fill", "font-family", "font-size",
-  "height", "isolation", "marker-end", "marker-start", "markerHeight", "markerUnits", "markerWidth",
+  "height", "id", "isolation", "marker-end", "marker-start", "markerHeight", "markerUnits", "markerWidth",
   "opacity", "orient", "patternTransform", "patternUnits", "points", "r", "refX", "refY", "stroke",
   "stroke-dasharray", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit", "stroke-width", "text-anchor",
   "transform", "values", "version", "viewBox", "width", "x", "x1", "x2", "xlink:href", "xmlns",
@@ -50,8 +50,19 @@ const options = {
   },
   allowedStyles: {
     "*": {
+      "clip-path": [/^url\(#[A-Za-z][A-Za-z0-9_.:-]*\)$/],
+      "dominant-baseline": [/^(?:auto|central|middle|text-after-edge|text-before-edge)$/],
+      "fill": [/^(?:none|white|currentColor|#[0-9a-fA-F]{3,8}|url\(#[A-Za-z][A-Za-z0-9_.:-]*\))$/],
+      "font-family": [/^[A-Za-z][A-Za-z0-9 ,_-]{0,80}$/],
+      "font-size": [/^\d+(?:\.\d+)?(?:px|pt|em|rem|%)?$/],
+      "font-style": [/^(?:normal|italic)$/],
       "padding-left": [/^\d+(?:\.\d+)?(?:px|em|rem|%)$/],
+      "stroke": [/^(?:none|currentColor|#[0-9a-fA-F]{3,8})$/],
+      "stroke-linecap": [/^(?:butt|round|square)$/],
+      "stroke-linejoin": [/^(?:bevel|miter|round)$/],
+      "stroke-width": [/^\d+(?:\.\d+)?(?:px|pt)?$/],
       "text-align": [/^(?:left|right|center|justify)$/],
+      "text-anchor": [/^(?:end|middle|start)$/],
       "text-decoration": [/^(?:none|underline|line-through)$/]
     }
   },

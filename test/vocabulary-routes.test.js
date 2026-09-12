@@ -46,6 +46,43 @@ test("vocabulary queries are bounded and normalized", async () => {
   );
 });
 
+test("vocabulary bootstrap starts set and dashboard reads together", async () => {
+  const started = [];
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const responses = [];
+  const service = {
+    async listVocabSets(kind) {
+      started.push(["sets", kind]);
+      await gate;
+      return [{ id: 1 }];
+    },
+    async vocabDashboard(kind, set) {
+      started.push(["dashboard", kind, set]);
+      await gate;
+      return { set: { id: 1 } };
+    }
+  };
+  const handle = createVocabularyRoutes({
+    service,
+    json(_res, status, body) { responses.push({ status, body }); }
+  });
+
+  const response = handle(
+    request(),
+    {},
+    new URL("https://sat.example/api/vocab/bootstrap?kind=word&set=vocab-terms")
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started, [["sets", "word"], ["dashboard", "word", "vocab-terms"]]);
+  release();
+  assert.equal(await response, true);
+  assert.deepEqual(responses[0], {
+    status: 200,
+    body: { success: true, data: { sets: [{ id: 1 }], dashboard: { set: { id: 1 } } } }
+  });
+});
+
 test("custom vocabulary rejects empty and oversized entries", async () => {
   const state = harness();
   await assert.rejects(

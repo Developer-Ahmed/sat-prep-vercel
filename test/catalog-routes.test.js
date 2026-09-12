@@ -18,8 +18,9 @@ function harness(overrides = {}) {
     startCacheAllQuestions: async (subject, pool) => ({ subject, pool }),
     importQuestions: async (source, subject, pool) => ({ source, subject, pool }),
     importNewQuestions: async (subject) => ({ subject }),
-    getQuestion: async (rowId) => overrides.question ?? { row_id: rowId },
-    getQuestionContent: async () => ({ stem: "Question" }),
+    getQuestionDetail: async (rowId) => overrides.question === null
+      ? null
+      : { question: overrides.question ?? { row_id: rowId }, content: { stem: "Question" } },
     ...overrides.service
   };
   const handle = createCatalogRoutes({

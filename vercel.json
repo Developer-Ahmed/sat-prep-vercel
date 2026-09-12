@@ -40,6 +40,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/home",
+      "destination": "/index.html"
+    },
+    {
       "source": "/english",
       "destination": "/index.html"
     },
@@ -49,6 +53,10 @@
     },
     {
       "source": "/vocab",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/about",
       "destination": "/index.html"
     },
     {

@@ -113,22 +113,25 @@ export function createCatalogService({ db, currentUserId, collegeBoard = createC
       .get(userId, rowId);
   }
 
-  async function getQuestionContent(question) {
-    const contentKey = contentKeyFor(question);
-    const cached = await db
-      .prepare("SELECT data_json FROM question_content WHERE question_row_id = ?")
-      .get(contentKey);
-    if (cached) {
-      const content = sanitizeQuestionContent(jsonValue(cached.data_json));
+  function usableCachedContent(question, dataJson) {
+    if (dataJson == null) return null;
+    try {
+      const content = sanitizeQuestionContent(jsonValue(dataJson));
       const needsLegacyRefresh =
         question.source === "collegeboard" &&
         question.ibn &&
         (!content.stimulus || !(Array.isArray(content.correct_answer) && content.correct_answer.length));
       if (!needsLegacyRefresh && contentIsUsable(question, content)) return normalizeContentCorrectAnswers(content);
+    } catch {
+      return null;
     }
+    return null;
+  }
 
+  async function fetchAndCacheQuestionContent(question) {
     if (question.source !== "collegeboard") throw new Error("Unsupported question source.");
     const content = sanitizeQuestionContent(await collegeBoard.loadQuestionContent(question));
+    const contentKey = contentKeyFor(question);
 
     await db.prepare(`
       INSERT INTO question_content (question_row_id, data_json, fetched_at)
@@ -140,6 +143,61 @@ export function createCatalogService({ db, currentUserId, collegeBoard = createC
     `).run(contentKey, JSON.stringify(content), now());
 
     return content;
+  }
+
+  async function getQuestionContent(question) {
+    const cached = await db
+      .prepare("SELECT data_json FROM question_content WHERE question_row_id = ?")
+      .get(contentKeyFor(question));
+    return usableCachedContent(question, cached?.data_json) || fetchAndCacheQuestionContent(question);
+  }
+
+  async function getQuestionContents(questions) {
+    if (!questions.length) return new Map();
+    const hasPrefetchedContent = questions.every((question) => Object.hasOwn(question, "cached_data_json"));
+    let cachedByRowId;
+    if (hasPrefetchedContent) {
+      cachedByRowId = new Map(questions.map((question) => [
+        contentKeyFor(question),
+        question.cached_data_json
+      ]));
+    } else {
+      const placeholders = questions.map(() => "?").join(", ");
+      const rows = await db.prepare(`
+        SELECT question_row_id, data_json
+        FROM question_content
+        WHERE question_row_id IN (${placeholders})
+      `).all(...questions.map((question) => contentKeyFor(question)));
+      cachedByRowId = new Map(rows.map((row) => [row.question_row_id, row.data_json]));
+    }
+    return new Map(await Promise.all(questions.map(async (question) => [
+      question.row_id,
+      usableCachedContent(question, cachedByRowId.get(contentKeyFor(question)))
+        || await fetchAndCacheQuestionContent(question)
+    ])));
+  }
+
+  async function getQuestionDetail(rowId) {
+    const userId = currentUserId();
+    const row = await db.prepare(`
+      SELECT
+        q.*,
+        p.status,
+        p.flagged,
+        p.selected_answer,
+        p.answered_at,
+        qc.data_json AS cached_data_json
+      FROM question_catalog q
+      LEFT JOIN progress p ON p.user_id = ? AND p.row_id = q.row_id
+      LEFT JOIN question_content qc ON qc.question_row_id = q.row_id
+      WHERE q.row_id = ?
+    `).get(userId, rowId);
+    if (!row) return null;
+
+    const { cached_data_json: cachedDataJson, ...question } = row;
+    const content = usableCachedContent(question, cachedDataJson)
+      || await fetchAndCacheQuestionContent(question);
+    return { question, content };
   }
 
   async function upsertImportedQuestions(database, questions, { source, subject, pool, live, importedAt }) {
@@ -441,6 +499,8 @@ export function createCatalogService({ db, currentUserId, collegeBoard = createC
     getContentCacheStats,
     getQuestion,
     getQuestionContent,
+    getQuestionContents,
+    getQuestionDetail,
     importNewQuestions,
     importQuestions,
     isAnsweredStatus,

@@ -5,6 +5,15 @@ export function createVocabularyRoutes({ service, json }) {
   return async function handleVocabularyRoute(req, res, url) {
     const query = () => parseInput(vocabQuerySchema, vocabQueryFromUrl(url));
 
+    if (url.pathname === "/api/vocab/bootstrap" && req.method === "GET") {
+      const { kind, set } = query();
+      const [sets, dashboard] = await Promise.all([
+        service.listVocabSets(kind),
+        service.vocabDashboard(kind, set)
+      ]);
+      json(res, 200, { success: true, data: { sets, dashboard } });
+      return true;
+    }
     if (url.pathname === "/api/vocab/sets" && req.method === "GET") {
       const { kind } = query();
       json(res, 200, { success: true, data: await service.listVocabSets(kind) });

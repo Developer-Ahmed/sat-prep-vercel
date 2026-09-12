@@ -31,3 +31,21 @@ test("question content preserves SAT tables, MathML, and safe answer formatting"
   assert.doesNotMatch(content.answerOptions.A, /data-bad/);
   assert.deepEqual(content.correct_answer, ["A"]);
 });
+
+test("question HTML preserves safe official SVG presentation without allowing executable CSS", () => {
+  const dirty = `
+    <svg viewBox="0 0 20 20">
+      <defs><path id="axis-mark" d="M0 0 L0 2"></path></defs>
+      <path d="M0 0 L20 20" style="fill:none;stroke:#000000;stroke-width:1.5;stroke-linejoin:miter"></path>
+      <use xlink:href="#axis-mark" style="fill:currentColor"></use>
+      <text style="font-family:Noto Serif;font-size:15px;font-style:italic;text-anchor:middle;dominant-baseline:middle">x</text>
+      <path d="M0 0" style="fill:url(https://attacker.example/image);stroke:url(javascript:alert(1))"></path>
+    </svg>
+  `;
+  const clean = sanitizeQuestionHtml(dirty);
+  assert.match(clean, /id="axis-mark"/);
+  assert.match(clean, /style="fill:none;stroke:#000000;stroke-width:1\.5;stroke-linejoin:miter"/);
+  assert.match(clean, /xlink:href="#axis-mark"/);
+  assert.match(clean, /font-family:Noto Serif/);
+  assert.doesNotMatch(clean, /attacker|javascript/i);
+});

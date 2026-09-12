@@ -3,11 +3,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 import {
+  PUBLIC_ROUTE_ROOTS,
   PROTECTED_ROUTE_ROOTS,
   SIGN_IN_PATH,
   clerkLoadOptions,
   isAuthenticationPath,
   isKnownPath,
+  isPublicPath,
   isProtectedPath,
   subscribeToSignOut
 } from "../public/shared/auth-runtime.js";
@@ -16,11 +18,16 @@ test("authentication routing recognizes every deployed application route", async
   const vercel = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
   const rewrites = new Set(vercel.rewrites.map(({ source }) => source));
 
-  assert.deepEqual(PROTECTED_ROUTE_ROOTS, ["/", "/math", "/english", "/new", "/vocab"]);
-  for (const route of PROTECTED_ROUTE_ROOTS.filter((route) => route !== "/")) {
+  assert.deepEqual(PUBLIC_ROUTE_ROOTS, ["/", "/home", "/about"]);
+  assert.deepEqual(PROTECTED_ROUTE_ROOTS, ["/math", "/english", "/new", "/vocab"]);
+  for (const route of [...PUBLIC_ROUTE_ROOTS, ...PROTECTED_ROUTE_ROOTS].filter((route) => route !== "/")) {
     assert.ok(rewrites.has(route), `${route} must have a matching Vercel rewrite`);
+  }
+  for (const route of PROTECTED_ROUTE_ROOTS) {
     assert.equal(isProtectedPath(route), true);
   }
+  assert.equal(isPublicPath("/"), true);
+  assert.equal(isPublicPath("/about"), true);
   assert.equal(isProtectedPath("/mathematics"), false);
   assert.equal(isProtectedPath("/math/extra"), false);
   assert.equal(isKnownPath("/missing"), false);

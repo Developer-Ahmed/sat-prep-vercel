@@ -7,6 +7,7 @@ import { errorPayload, HttpError } from "./platform/http.js";
 import { applySecurityHeaders, enforceTrustedOrigin } from "./platform/security.js";
 import { createCatalogService } from "./modules/catalog/service.js";
 import { createCatalogRoutes } from "./modules/catalog/routes.js";
+import { createDashboardRoutes } from "./modules/dashboard/routes.js";
 import { createPracticeService } from "./modules/practice/service.js";
 import { createPracticeRoutes } from "./modules/practice/routes.js";
 import { createVocabularyService } from "./modules/vocabulary/service.js";
@@ -50,6 +51,7 @@ export function createApplication({ db, publicDir, auth = clerkAuth, logger = lo
   const practice = createPracticeService({ db, currentUserId, catalog, isAdmin: auth.isAdmin });
   const vocabulary = createVocabularyService({ db, currentUserId });
   const users = createUserService({ db, currentUserId, practice });
+  const handleDashboardRoute = createDashboardRoutes({ practice, catalog, json });
   const handleCatalogRoute = createCatalogRoutes({ service: catalog, json, requireAdmin });
   const handlePracticeRoute = createPracticeRoutes({ service: practice, json });
   const handleVocabularyRoute = createVocabularyRoutes({ service: vocabulary, json });
@@ -148,6 +150,7 @@ export function createApplication({ db, publicDir, auth = clerkAuth, logger = lo
     try {
       if (authenticated) enforceTrustedOrigin(req, auth.authorizedParties(req));
       if (await handleUserRoute(req, res, url)) return;
+      if (await handleDashboardRoute(req, res, url)) return;
       if (await handleVocabularyRoute(req, res, url)) return;
       if (await handlePracticeRoute(req, res, url)) return;
       if (await handleCatalogRoute(req, res, url)) return;

@@ -44,10 +44,9 @@ export function createCatalogRoutes({ service, json, requireAdmin }) {
     const questionMatch = url.pathname.match(/^\/api\/questions\/(.+)$/);
     if (questionMatch && req.method === "GET") {
       const rowId = decodedQuestionId(questionMatch[1]);
-      const question = await service.getQuestion(rowId);
-      if (!question) throw new HttpError(404, "QUESTION_NOT_FOUND", "Question not found.");
-      const content = await service.getQuestionContent(question);
-      json(res, 200, { success: true, data: { question, content } });
+      const detail = await service.getQuestionDetail(rowId);
+      if (!detail) throw new HttpError(404, "QUESTION_NOT_FOUND", "Question not found.");
+      json(res, 200, { success: true, data: detail });
       return true;
     }
     return false;

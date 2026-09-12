@@ -1,6 +1,9 @@
 import { escapeHtml, requestJson } from "/shared/browser.js";
+import { renderAppNavigation, renderBrand } from "/shared/ui.js";
 
 const app = document.querySelector("#app");
+const ERROR_DISMISS_MS = 3000;
+let errorDismissTimer = null;
 
 const state = {
   kind: new URLSearchParams(window.location.search).get("kind") === "root" ? "root" : "word",
@@ -21,10 +24,11 @@ const state = {
   error: "",
   notice: "",
   search: "",
-  reviewRequestId: ""
+  reviewRequestId: "",
+  reviewSavePromises: {}
 };
 
-document.title = "SAT Vocabulary";
+document.title = "Vocabulary | PEAK1600";
 
 async function request(path, options = {}) {
   return requestJson(path, options, { resourceLabel: "vocabulary data" });
@@ -37,6 +41,7 @@ async function get(path) {
 async function post(path, body) {
   return request(path, {
     method: "POST",
+    keepalive: true,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body)
   });
@@ -48,8 +53,17 @@ function setLoading(value) {
 }
 
 function setError(error) {
+  if (errorDismissTimer) clearTimeout(errorDismissTimer);
+  errorDismissTimer = null;
   state.error = error ? String(error.message || error) : "";
   render();
+  if (state.error) {
+    errorDismissTimer = setTimeout(() => {
+      state.error = "";
+      errorDismissTimer = null;
+      render();
+    }, ERROR_DISMISS_MS);
+  }
 }
 
 async function loadDashboard() {
@@ -58,10 +72,12 @@ async function loadDashboard() {
   state.setId = String(state.dashboard.set.id);
 }
 
-async function loadSets() {
-  state.sets = await get(`/api/vocab/sets?kind=${state.kind}`);
-  const selected = state.sets.find((set) => String(set.id) === String(state.setId) || set.slug === state.setId);
-  state.setId = String(selected?.id || state.sets[0]?.id || "");
+async function loadBootstrap() {
+  const setQuery = state.setId ? `&set=${encodeURIComponent(state.setId)}` : "";
+  const bootstrap = await get(`/api/vocab/bootstrap?kind=${state.kind}${setQuery}`);
+  state.sets = bootstrap.sets;
+  state.dashboard = bootstrap.dashboard;
+  state.setId = String(bootstrap.dashboard.set.id);
 }
 
 async function loadLibrary() {
@@ -83,8 +99,8 @@ async function switchKind(kind) {
   state.notice = "";
   setLoading(true);
   try {
-    await loadSets();
-    await loadDashboard();
+    await flushVocabReviews();
+    await loadBootstrap();
     updateVocabUrl();
   } finally {
     setLoading(false);
@@ -101,6 +117,7 @@ async function switchSet(setId) {
   updateVocabUrl();
   setLoading(true);
   try {
+    await flushVocabReviews();
     await loadDashboard();
   } finally {
     setLoading(false);
@@ -135,7 +152,29 @@ function currentSessionEntry() {
   return collection[state.currentIndex] || null;
 }
 
-async function answerQuiz(option) {
+function trackVocabReview(itemId, rating, requestId) {
+  const request = post("/api/vocab/review", {
+    itemId,
+    setId: state.setId,
+    rating,
+    requestId
+  });
+  state.reviewSavePromises[requestId] = request;
+  request
+    .catch(setError)
+    .finally(() => {
+      if (state.reviewSavePromises[requestId] === request) delete state.reviewSavePromises[requestId];
+    });
+  return request;
+}
+
+async function flushVocabReviews() {
+  while (Object.keys(state.reviewSavePromises).length) {
+    await Promise.all(Object.values(state.reviewSavePromises));
+  }
+}
+
+function answerQuiz(option) {
   if (state.answered) return;
   const question = currentSessionEntry();
   if (!question) return;
@@ -145,38 +184,18 @@ async function answerQuiz(option) {
   if (isCorrect) state.correct += 1;
   else state.missed += 1;
   render();
-  try {
-    const result = await post("/api/vocab/review", {
-      itemId: question.id,
-      setId: state.setId,
-      rating: isCorrect ? "good" : "again",
-      requestId: state.reviewRequestId
-    });
-    state.dashboard = result.dashboard;
-  } catch (error) {
-    setError(error);
-  }
+  trackVocabReview(question.id, isCorrect ? "good" : "again", state.reviewRequestId);
 }
 
-async function rateRecall(rating) {
+function rateRecall(rating) {
   const item = currentSessionEntry();
   if (!item || !state.revealed || state.answered) return;
   state.answered = true;
   if (rating === "again") state.missed += 1;
   else state.correct += 1;
   render();
-  try {
-    const result = await post("/api/vocab/review", {
-      itemId: item.id,
-      setId: state.setId,
-      rating,
-      requestId: state.reviewRequestId
-    });
-    state.dashboard = result.dashboard;
-    nextCard();
-  } catch (error) {
-    setError(error);
-  }
+  trackVocabReview(item.id, rating, state.reviewRequestId);
+  nextCard();
 }
 
 function nextCard() {
@@ -223,21 +242,7 @@ async function addWord(form) {
 }
 
 function renderTopNav() {
-  return `
-    <div class="top-navigation">
-      <a class="product-lockup" href="/" aria-label="SAT Practice home">
-        <span class="product-symbol vocab-symbol" aria-hidden="true">S</span>
-        <strong>SAT Practice</strong>
-      </a>
-      <nav class="subject-tabs" aria-label="SAT study tabs">
-        <a href="/">Math</a>
-        <a href="/english">English</a>
-        <a href="/new">New Questions</a>
-        <a class="active" href="/vocab" aria-current="page">Vocab</a>
-      </nav>
-      <div class="account-control" data-auth-user-button aria-label="Account"></div>
-    </div>
-  `;
+  return renderAppNavigation("vocab");
 }
 
 function renderKindTabs() {
@@ -251,20 +256,16 @@ function renderKindTabs() {
 
 function renderSetSelector() {
   if (state.kind !== "word") return "";
+  const activeSet = state.sets.find((set) => String(set.id) === String(state.setId));
   return `
     <section class="vocab-set-selector" aria-label="Vocabulary sets">
       <div class="vocab-set-heading">
-        <span>Word set</span>
-        <strong>${escapeHtml(state.sets.find((set) => String(set.id) === String(state.setId))?.name || "Choose a set")}</strong>
+        <span>Vocabulary set</span>
+        <strong>${escapeHtml(activeSet?.name || "Choose a set")}</strong>
       </div>
-      <div class="vocab-set-options">
-        ${state.sets.map((set) => `
-          <button class="vocab-set-option ${String(set.id) === String(state.setId) ? "active" : ""}" data-set-id="${set.id}">
-            <span>${escapeHtml(set.name)}</span>
-            <small>${escapeHtml(set.total)} words</small>
-          </button>
-        `).join("")}
-      </div>
+      <select data-set-select aria-label="Select vocabulary set">
+        ${state.sets.map((set) => `<option value="${set.id}" ${String(set.id) === String(state.setId) ? "selected" : ""}>${escapeHtml(set.name)} · ${escapeHtml(set.total)} words</option>`).join("")}
+      </select>
     </section>
   `;
 }
@@ -276,48 +277,70 @@ function stat(label, value, tone = "") {
 function renderDashboard() {
   const metrics = state.dashboard || {};
   const label = state.kind === "word" ? "Words" : "Roots";
+  const total = Number(metrics.total) || 0;
+  const mastered = Number(metrics.mastered) || 0;
+  const mastery = total ? Math.round((mastered / total) * 100) : 0;
   return `
     <main class="vocab-shell" id="main-content">
       ${renderTopNav()}
-      <header class="vocab-toolbar">
-        <div>
-          <p class="vocab-eyebrow">SAT Reading & Writing</p>
-          <h1>Vocabulary</h1>
-          <p>${metrics.due || 0} ${label.toLowerCase()} ready for review.</p>
-        </div>
-        <button class="secondary" data-action="library">Open library</button>
-      </header>
-      ${renderKindTabs()}
-      ${renderSetSelector()}
-      <section class="study-actions">
-        <div class="study-action-main">
-          <div>
-            <span>Up next</span>
-            <h2>Study ${Math.min(15, Math.max(1, Number(metrics.due) || 15))} ${label.toLowerCase()}</h2>
-            <p>Multiple-choice meaning practice</p>
+      <div class="vocab-dashboard-grid">
+        <aside class="vocab-sidebar">
+          <div class="vocab-sidebar-heading">
+            <span class="vocab-eyebrow">Study library</span>
+            <h1>Vocabulary</h1>
           </div>
-          <button class="primary" data-action="start-quiz">Start review</button>
+          ${renderKindTabs()}
+          ${renderSetSelector()}
+          <section class="vocab-mastery-panel">
+            <span>Mastery</span>
+            <div class="mastery-ring" style="--mastery:${mastery}" aria-label="${mastery}% mastered"><strong>${mastery}%</strong></div>
+            <p>${mastered} of ${total} ${label.toLowerCase()} mastered</p>
+          </section>
+          <button class="secondary full-width" data-action="library">Browse library</button>
+        </aside>
+
+        <div class="vocab-main-column">
+          <header class="vocab-toolbar">
+            <div>
+              <p class="vocab-eyebrow">SAT Reading & Writing</p>
+              <h2>${metrics.due || 0} ${label.toLowerCase()} ready</h2>
+              <p>Continue with the items scheduled for today.</p>
+            </div>
+            <span class="source-badge">Spaced review</span>
+          </header>
+
+          <section class="study-actions">
+            <div class="study-action-main">
+              <div>
+                <span>Recommended</span>
+                <h2>Meaning practice</h2>
+                <p>${Math.min(15, Math.max(1, Number(metrics.due) || 15))} multiple-choice cards</p>
+              </div>
+              <button class="primary" data-action="start-quiz">Start review</button>
+            </div>
+            <div class="study-secondary-actions">
+              <button class="study-action-secondary" data-action="start-recall">
+                <span>Recall cards</span>
+                <strong>Reveal and rate</strong>
+              </button>
+              <button class="study-action-secondary" data-action="library">
+                <span>Full library</span>
+                <strong>${metrics.total || 0} ${label.toLowerCase()}</strong>
+              </button>
+            </div>
+          </section>
+
+          <section class="vocab-stats" aria-label="${label} progress">
+            ${stat("Due", metrics.due || 0, "due")}
+            ${stat("New", metrics.new || 0)}
+            ${stat("Learning", metrics.learning || 0)}
+            ${stat("Mastered", metrics.mastered || 0, "mastered")}
+            ${stat("Today", metrics.reviewedToday || 0)}
+            ${stat("Accuracy", `${metrics.accuracy || 0}%`)}
+          </section>
+          ${state.kind === "word" ? renderAddWord() : renderRootFamilies()}
         </div>
-        <div class="study-secondary-actions">
-          <button class="study-action-secondary" data-action="start-recall">
-            <span>Recall cards</span>
-            <strong>Reveal and rate</strong>
-          </button>
-          <button class="study-action-secondary" data-action="library">
-            <span>Browse library</span>
-            <strong>${metrics.total || 0} ${label.toLowerCase()}</strong>
-          </button>
-        </div>
-      </section>
-      <section class="vocab-stats" aria-label="${label} progress">
-        ${stat("Due", metrics.due || 0, "due")}
-        ${stat("New", metrics.new || 0)}
-        ${stat("Learning", metrics.learning || 0)}
-        ${stat("Mastered", metrics.mastered || 0, "mastered")}
-        ${stat("Today", metrics.reviewedToday || 0)}
-        ${stat("Accuracy", `${metrics.accuracy || 0}%`)}
-      </section>
-      ${state.kind === "word" ? renderAddWord() : renderRootFamilies()}
+      </div>
     </main>
   `;
 }
@@ -445,9 +468,10 @@ function renderRecall() {
 function renderSessionHeader(total, progress) {
   return `
     <header class="vocab-session-header">
-      <button class="ghost" data-action="end-session">← Exit</button>
+      <a class="product-lockup" href="/" aria-label="PEAK1600 home">${renderBrand({ compact: true })}</a>
       <div class="vocab-progress-track"><span style="width:${progress}%"></span></div>
-      <strong>${state.currentIndex + 1}/${total}</strong>
+      <strong>${state.currentIndex + 1} of ${total}</strong>
+      <button class="secondary" data-action="end-session">Exit review</button>
     </header>
   `;
 }
@@ -511,7 +535,7 @@ function renderLibrary() {
 function render() {
   app.innerHTML = `
     ${state.loading ? `<div class="busy" role="status" aria-live="polite">Loading vocabulary</div>` : ""}
-    ${state.error ? `<div class="error" role="alert">${escapeHtml(state.error)}</div>` : ""}
+    ${state.error ? `<div class="error" role="alert"><span>${escapeHtml(state.error)}</span><button class="error-dismiss" data-action="dismiss-error" aria-label="Dismiss error" title="Dismiss error">×</button></div>` : ""}
     ${state.notice ? `<div class="vocab-notice" role="status" aria-live="polite">${escapeHtml(state.notice)}</div>` : ""}
     ${state.view === "session" ? (state.sessionType === "quiz" ? renderQuiz() : renderRecall()) : ""}
     ${state.view === "complete" ? renderComplete() : ""}
@@ -543,6 +567,10 @@ app.addEventListener("click", async (event) => {
   }
   const button = event.target.closest("[data-action]");
   if (!button) return;
+  if (button.dataset.action === "dismiss-error") {
+    setError("");
+    return;
+  }
   try {
     if (button.dataset.action === "start-quiz") await startSession("quiz");
     if (button.dataset.action === "start-recall") await startSession("recall");
@@ -550,6 +578,8 @@ app.addEventListener("click", async (event) => {
     if (button.dataset.action === "dashboard" || button.dataset.action === "end-session") {
       state.view = "dashboard";
       state.session = null;
+      render();
+      await flushVocabReviews();
       await loadDashboard();
       render();
     }
@@ -561,6 +591,11 @@ app.addEventListener("click", async (event) => {
   } catch (error) {
     setError(error);
   }
+});
+
+app.addEventListener("change", async (event) => {
+  const select = event.target.closest("[data-set-select]");
+  if (select) await switchSet(select.value);
 });
 
 app.addEventListener("submit", async (event) => {
@@ -582,8 +617,7 @@ state.loading = true;
 render();
 
 Promise.resolve()
-  .then(loadSets)
-  .then(loadDashboard)
+  .then(loadBootstrap)
   .then(() => {
     state.loading = false;
     updateVocabUrl();

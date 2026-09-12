@@ -1,6 +1,9 @@
 import { escapeHtml, requestJson } from "/shared/browser.js";
+import { renderAppNavigation, renderBrand } from "/shared/ui.js";
 
 const app = document.querySelector("#app");
+const ERROR_DISMISS_MS = 3000;
+let errorDismissTimer = null;
 
 const subjects = {
   math: {
@@ -8,7 +11,7 @@ const subjects = {
     title: "SAT Math Practice",
     label: "SAT Math",
     shortLabel: "Math",
-    route: "/",
+    route: "/math",
     rowLabel: "SAT Math Rows",
     defaultCount: 22,
     defaultMinutes: 35,
@@ -30,13 +33,6 @@ const subjects = {
     referenceSheet: false
   }
 };
-
-const topTabs = [
-  { key: "math", label: "Math", route: "/" },
-  { key: "english", label: "English", route: "/english" },
-  { key: "new", label: "New Questions", route: "/new" },
-  { key: "vocab", label: "Vocab", route: "/vocab" }
-];
 
 function initialPool() {
   return window.location.pathname.startsWith("/new") ? "new" : "main";
@@ -69,6 +65,10 @@ const state = {
   reviewAttempts: {},
   referenceOpen: false,
   answerSaveTimers: {},
+  answerSavePromises: {},
+  flagSavePromises: {},
+  questionDetails: {},
+  questionDetailPromises: {},
   questionStartedAt: null,
   activeTimePassIndex: null,
   localTimeSpent: {},
@@ -88,6 +88,8 @@ function currentSubject() {
   return subjects[state.subject] || subjects.math;
 }
 
+document.title = `${currentSubject().shortLabel} | PEAK1600`;
+
 function subjectPath(path) {
   const separator = path.includes("?") ? "&" : "?";
   return `${path}${separator}subject=${encodeURIComponent(state.subject)}&pool=${encodeURIComponent(state.pool)}`;
@@ -101,8 +103,11 @@ const api = {
     return requestJson(path, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...body, subject: state.subject, pool: state.pool })
+      body: JSON.stringify(body)
     }, { resourceLabel: "SAT data" });
+  },
+  async postScoped(path, body = {}) {
+    return this.post(path, { ...body, subject: state.subject, pool: state.pool });
   }
 };
 
@@ -118,6 +123,16 @@ function clearPendingAnswerSaves() {
   state.answerSaveTimers = {};
 }
 
+function resetQuestionDetails() {
+  state.questionDetails = {};
+  state.questionDetailPromises = {};
+}
+
+function seedModuleQuestionDetails() {
+  resetQuestionDetails();
+  Object.assign(state.questionDetails, state.module?.questionDetails || {});
+}
+
 function setBusy(message) {
   state.loading = Boolean(message);
   state.busyMessage = message || "";
@@ -125,15 +140,25 @@ function setBusy(message) {
 }
 
 function setError(error) {
+  if (errorDismissTimer) clearTimeout(errorDismissTimer);
+  errorDismissTimer = null;
   state.error = error ? String(error.message || error) : "";
   render();
+  if (state.error) {
+    errorDismissTimer = setTimeout(() => {
+      state.error = "";
+      errorDismissTimer = null;
+      render();
+    }, ERROR_DISMISS_MS);
+  }
 }
 
 async function loadStatus() {
-  state.status = await api.get("/api/status");
+  const dashboard = await api.get("/api/dashboard");
+  state.status = dashboard.status;
   state.importSource = "collegeboard";
-  state.modules = await api.get("/api/modules");
-  state.cacheJob = await api.get("/api/cache-status");
+  state.modules = dashboard.modules;
+  state.cacheJob = dashboard.cacheJob;
 }
 
 async function loadCacheStatus() {
@@ -145,7 +170,7 @@ async function importQuestions() {
   setBusy(state.pool === "new" ? `Checking for new ${currentSubject().shortLabel} questions` : `Importing ${currentSubject().label} questions`);
   try {
     clearPendingAnswerSaves();
-    await api.post(state.pool === "new" ? "/api/import-new" : "/api/import", { source: "collegeboard" });
+    await api.postScoped(state.pool === "new" ? "/api/import-new" : "/api/import", { source: "collegeboard" });
     await loadStatus();
     state.importSource = "collegeboard";
     state.modules = [];
@@ -153,6 +178,7 @@ async function importQuestions() {
     state.currentDetail = null;
     state.referenceOpen = false;
     resetTimeTracking();
+    resetQuestionDetails();
     state.eliminatedAnswers = {};
   } catch (error) {
     setError(error);
@@ -164,7 +190,7 @@ async function importQuestions() {
 async function cacheAllQuestions() {
   setError("");
   try {
-    state.cacheJob = await api.post("/api/cache-all");
+    state.cacheJob = await api.postScoped("/api/cache-all");
     await loadStatus();
     render();
   } catch (error) {
@@ -189,7 +215,7 @@ async function createModule() {
           includeAnswered: false
         }
       : state.moduleOptions;
-    state.module = await api.post("/api/modules", options);
+    state.module = await api.postScoped("/api/modules", options);
     state.currentIndex = 0;
     state.currentDetail = null;
     state.reviewOpen = false;
@@ -199,6 +225,7 @@ async function createModule() {
     state.autoSubmitting = false;
     state.reviewAttempts = {};
     resetTimeTracking();
+    seedModuleQuestionDetails();
     state.eliminatedAnswers = {};
     await loadCurrentQuestion();
   } catch (error) {
@@ -213,7 +240,7 @@ async function createReviewModule(mode) {
   setBusy(mode === "incorrect" ? "Creating incorrect review" : "Creating flagged review");
   try {
     clearPendingAnswerSaves();
-    state.module = await api.post("/api/review-modules", {
+    state.module = await api.postScoped("/api/review-modules", {
       mode,
       count: state.moduleOptions.count || currentSubject().defaultCount,
       durationMinutes: 0
@@ -227,6 +254,7 @@ async function createReviewModule(mode) {
     state.autoSubmitting = false;
     state.reviewAttempts = {};
     resetTimeTracking();
+    seedModuleQuestionDetails();
     state.eliminatedAnswers = {};
     await loadCurrentQuestion();
   } catch (error) {
@@ -251,6 +279,7 @@ async function openModule(moduleId) {
     state.autoSubmitting = false;
     state.reviewAttempts = {};
     resetTimeTracking();
+    seedModuleQuestionDetails();
     state.eliminatedAnswers = {};
     await loadCurrentQuestion();
   } catch (error) {
@@ -264,22 +293,45 @@ async function loadCurrentQuestion() {
   if (!state.module) return;
   const row = state.module.questions[state.currentIndex];
   if (!row) return;
-  state.currentDetail = null;
+  const rowId = row.row_id;
+  state.currentDetail = state.questionDetails[rowId] || null;
   state.questionStartedAt = null;
   state.activeTimePassIndex = null;
-  render();
-  try {
-    state.currentDetail = await api.get(`/api/questions/${encodeURIComponent(row.row_id)}`);
-  } catch (error) {
-    setError(error);
+  if (!state.currentDetail) {
+    render();
+    try {
+      state.currentDetail = await questionDetailFor(rowId);
+    } catch (error) {
+      if (currentQuestion()?.row_id === rowId) setError(error);
+      return;
+    }
   }
+  if (currentQuestion()?.row_id !== rowId) return;
   startCurrentQuestionTimer();
   render();
+  prefetchQuestion(state.currentIndex + 1);
 }
 
-async function reloadModule() {
-  if (!state.module) return;
-  state.module = await api.get(`/api/modules/${state.module.id}`);
+async function questionDetailFor(rowId) {
+  if (state.questionDetails[rowId]) return state.questionDetails[rowId];
+  if (!state.questionDetailPromises[rowId]) {
+    const request = api.get(`/api/questions/${encodeURIComponent(rowId)}`)
+      .then((detail) => {
+        state.questionDetails[rowId] = detail;
+        return detail;
+      })
+      .finally(() => {
+        if (state.questionDetailPromises[rowId] === request) delete state.questionDetailPromises[rowId];
+      });
+    state.questionDetailPromises[rowId] = request;
+  }
+  return state.questionDetailPromises[rowId];
+}
+
+function prefetchQuestion(index) {
+  const row = state.module?.questions[index];
+  if (!row || state.questionDetails[row.row_id] || state.questionDetailPromises[row.row_id]) return;
+  questionDetailFor(row.row_id).catch(() => {});
 }
 
 function currentQuestion() {
@@ -411,42 +463,70 @@ function hasAnswerOptions(content) {
   return Boolean(content.answerOptions && Object.keys(content.answerOptions).length);
 }
 
-async function saveAnswer(rowId, answer, flagged = flaggedFor(rowId), { reload = true } = {}) {
+async function saveAnswer(rowId, answer, flagged = flaggedFor(rowId)) {
   await api.post(`/api/modules/${state.module.id}/answers`, { rowId, answer, flagged });
-  if (reload) {
-    await reloadModule();
-    render();
-  }
+}
+
+function startAnswerSave(rowId, answer) {
+  const previous = state.answerSavePromises[rowId] || Promise.resolve();
+  const request = previous
+    .catch(() => {})
+    .then(() => saveAnswer(rowId, answer, flaggedFor(rowId)));
+  state.answerSavePromises[rowId] = request;
+  request
+    .catch(setError)
+    .finally(() => {
+      if (state.answerSavePromises[rowId] === request) delete state.answerSavePromises[rowId];
+    });
+  return request;
 }
 
 function queueAnswerSave(rowId, answer) {
   clearTimeout(state.answerSaveTimers[rowId]);
   state.answerSaveTimers[rowId] = setTimeout(() => {
     delete state.answerSaveTimers[rowId];
-    saveAnswer(rowId, answer, flaggedFor(rowId), { reload: false }).catch(setError);
+    startAnswerSave(rowId, answer);
   }, 300);
 }
 
 async function flushPendingAnswerSaves() {
   const pendingRowIds = Object.keys(state.answerSaveTimers);
-  if (!pendingRowIds.length) return;
-  clearPendingAnswerSaves();
-  await Promise.all(pendingRowIds.map((rowId) => {
+  if (pendingRowIds.length) clearPendingAnswerSaves();
+  const queued = pendingRowIds.map((rowId) => {
     const row = state.module?.questions.find((question) => question.row_id === rowId);
-    return row ? saveAnswer(rowId, row.answer || "", flaggedFor(rowId), { reload: false }) : Promise.resolve();
-  }));
+    return row ? startAnswerSave(rowId, row.answer || "") : Promise.resolve();
+  });
+  await Promise.all([...queued, ...Object.values(state.answerSavePromises)]);
 }
 
 async function saveFlag(rowId, flagged) {
-  await api.post(`/api/modules/${state.module.id}/flag`, { rowId, flagged });
-  await reloadModule();
+  const row = state.module?.questions.find((question) => question.row_id === rowId);
+  if (!row || state.flagSavePromises[rowId]) return;
+  const previousFlag = flaggedFor(rowId);
+  row.module_flagged = Boolean(flagged);
+  const request = api.post(`/api/modules/${state.module.id}/flag`, { rowId, flagged: Boolean(flagged) });
+  state.flagSavePromises[rowId] = request;
   render();
+  try {
+    await request;
+  } catch (error) {
+    row.module_flagged = previousFlag;
+    throw error;
+  } finally {
+    delete state.flagSavePromises[rowId];
+    render();
+  }
+}
+
+async function flushPendingFlagSaves() {
+  await Promise.all(Object.values(state.flagSavePromises));
 }
 
 async function removeCurrentIncorrectQuestion() {
   const row = currentQuestion();
   if (!row) return;
-  await api.post(`/api/questions/${encodeURIComponent(row.row_id)}/clear-incorrect`);
+  await flushPendingFlagSaves();
+  await api.postScoped(`/api/questions/${encodeURIComponent(row.row_id)}/clear-incorrect`);
   state.module.questions = state.module.questions.filter((question) => question.row_id !== row.row_id);
   state.module.questionIds = state.module.questionIds.filter((rowId) => rowId !== row.row_id);
       state.reviewAttempts = Object.fromEntries(
@@ -455,21 +535,25 @@ async function removeCurrentIncorrectQuestion() {
   delete state.eliminatedAnswers[row.row_id];
   state.currentIndex = Math.min(state.currentIndex, Math.max(0, state.module.questions.length - 1));
   state.currentDetail = null;
-  await loadStatus();
+  const statusRefresh = loadStatus();
   if (state.module.questions.length) {
-    await loadCurrentQuestion();
+    await Promise.all([statusRefresh, loadCurrentQuestion()]);
   } else {
+    await statusRefresh;
     state.module = null;
     render();
   }
 }
 
 async function setCurrentIndex(index) {
-  await flushPendingAnswerSaves();
-  await flushCurrentTime({ restart: false });
+  const persistence = Promise.all([
+    flushPendingAnswerSaves(),
+    flushPendingFlagSaves(),
+    flushCurrentTime({ restart: false })
+  ]);
   state.currentIndex = Math.max(0, Math.min(index, state.module.questions.length - 1));
   state.reviewOpen = false;
-  await loadCurrentQuestion();
+  await Promise.all([persistence, loadCurrentQuestion()]);
 }
 
 async function submitModule() {
@@ -478,12 +562,14 @@ async function submitModule() {
   setError("");
   setBusy("Submitting module");
   try {
-    await flushPendingAnswerSaves();
-    await flushCurrentTime({ restart: false });
+    await Promise.all([
+      flushPendingAnswerSaves(),
+      flushPendingFlagSaves(),
+      flushCurrentTime({ restart: false })
+    ]);
     const submittedModule = await api.post(`/api/modules/${state.module.id}/submit`);
     state.reviewOpen = false;
     state.reviewHideAnswers = false;
-    await loadStatus();
     if (submittedModule.next_section_module_id) {
       state.module = await api.get(`/api/modules/${submittedModule.next_section_module_id}`);
       state.currentIndex = 0;
@@ -491,6 +577,7 @@ async function submitModule() {
       state.resultsOpen = false;
       state.reviewAttempts = {};
       resetTimeTracking();
+      seedModuleQuestionDetails();
       state.eliminatedAnswers = {};
       await loadCurrentQuestion();
       return;
@@ -498,6 +585,7 @@ async function submitModule() {
     state.module = submittedModule;
     state.resultsOpen = true;
     await loadCurrentQuestion();
+    loadStatus().catch(setError);
   } catch (error) {
     setError(error);
   } finally {
@@ -511,11 +599,12 @@ async function resetProgress() {
   setBusy("Resetting progress");
   try {
     clearPendingAnswerSaves();
-    state.status = await api.post("/api/reset-progress");
+    state.status = await api.postScoped("/api/reset-progress");
     state.modules = [];
     state.module = null;
     state.currentDetail = null;
     resetTimeTracking();
+    resetQuestionDetails();
   } catch (error) {
     setError(error);
   } finally {
@@ -657,22 +746,7 @@ function statCard(label, value) {
 }
 
 function renderSubjectTabs() {
-  return `
-    <div class="top-navigation">
-      <a class="product-lockup" href="/" aria-label="SAT Practice home">
-        <span class="product-symbol" aria-hidden="true">S</span>
-        <strong>SAT Practice</strong>
-      </a>
-      <nav class="subject-tabs" aria-label="SAT subject tabs">
-        ${topTabs.map((tab) => `
-          <a class="${tab.key === (state.pool === "new" ? "new" : state.subject) ? "active" : ""}" href="${tab.route}" ${tab.key === (state.pool === "new" ? "new" : state.subject) ? 'aria-current="page"' : ""}>
-            ${escapeHtml(tab.label)}
-          </a>
-        `).join("")}
-      </nav>
-      <div class="account-control" data-auth-user-button aria-label="Account"></div>
-    </div>
-  `;
+  return renderAppNavigation(state.pool === "new" ? "new" : state.subject);
 }
 
 function renderNewSubjectSwitch() {
@@ -793,6 +867,7 @@ function renderHistory() {
 
 function renderDashboard() {
   const status = state.status || {};
+  const ready = Boolean(state.status);
   const subject = currentSubject();
   const cache = state.cacheJob?.cache || status.contentCache || {};
   const cacheJob = state.cacheJob || {};
@@ -806,7 +881,10 @@ function renderDashboard() {
   const cachePercent = cache.total ? Math.round((cache.cached / cache.total) * 100) : 0;
   const answered = Number(status.answered) || 0;
   const correct = Number(status.correct) || 0;
-  const overallAccuracy = accuracyPercent(correct, answered);
+  const accuracy = accuracyPercent(correct, answered);
+  const overallAccuracy = ready ? `${accuracy}%` : "—";
+  const firstName = String(window.Clerk?.user?.firstName || "").trim();
+  const greeting = firstName ? `Welcome back, ${escapeHtml(firstName)}` : "Ready for focused practice?";
   const modeOptions = [
     { value: "random", label: "Random" },
     ...(newPool ? [{ value: "adaptive", label: "Adaptive section" }] : []),
@@ -819,82 +897,105 @@ function renderDashboard() {
     <main class="dashboard" id="main-content">
       ${renderSubjectTabs()}
       ${renderNewSubjectSwitch()}
-      <div class="toolbar">
-        <div>
-          <span class="page-kicker">${escapeHtml(newPool ? "Recently added" : subject.shortLabel)}</span>
-          <h1>${escapeHtml(newPool ? `New SAT ${subject.shortLabel} Questions` : subject.title)}</h1>
-          <p>${formatNumber(status.unanswered)} unanswered questions ready to practice.</p>
+      <div class="dashboard-grid">
+        <div class="dashboard-main-column">
+          <section class="dashboard-welcome">
+            <div>
+              <span class="page-kicker">${escapeHtml(newPool ? "Recently added" : subject.shortLabel)}</span>
+              <h1>${greeting}</h1>
+              <p>${ready ? `${formatNumber(status.unanswered)} unanswered ${subject.shortLabel.toLowerCase()} questions are available.` : "Loading your progress…"}</p>
+            </div>
+            <div class="welcome-actions">
+              <button class="secondary" data-action="reset" ${ready ? "" : "disabled"}>Reset progress</button>
+            </div>
+          </section>
+
+          <div class="stats overview-stats" aria-label="Practice overview">
+            ${statCard("Accuracy", overallAccuracy)}
+            ${statCard("Answered", ready ? status.answered : "—")}
+            ${statCard("Unanswered", ready ? status.unanswered : "—")}
+            ${statCard("Flagged", ready ? status.flagged : "—")}
+          </div>
+
+          ${renderPerformanceBreakdown()}
+
+          <section class="module-panel" aria-labelledby="practice-builder-title">
+            <div class="module-panel-heading">
+              <div>
+                <span class="section-kicker">Practice builder</span>
+                <h2 id="practice-builder-title">Create your next ${escapeHtml(subject.shortLabel)} session</h2>
+              </div>
+              <span class="source-badge">College Board</span>
+            </div>
+            <div class="mode-segments" role="group" aria-label="Practice mode">
+              ${modeOptions.map((mode) => `
+                <button type="button" class="${state.moduleOptions.mode === mode.value ? "active" : ""}" data-mode-option="${mode.value}" aria-pressed="${state.moduleOptions.mode === mode.value}">${escapeHtml(mode.label)}</button>
+              `).join("")}
+            </div>
+            <div class="field-group">
+              <label>
+                Questions
+                <input data-option="count" type="number" min="1" max="98" value="${lockedSatMode ? subject.defaultCount : state.moduleOptions.count}" ${lockedSatMode ? "disabled" : ""}>
+              </label>
+              <label>
+                Minutes
+                <input data-option="durationMinutes" type="number" min="0" max="180" value="${lockedSatMode ? subject.defaultMinutes : state.moduleOptions.durationMinutes}" ${lockedSatMode ? "disabled" : ""}>
+              </label>
+              <label class="check">
+                <input data-option="includeAnswered" type="checkbox" ${state.moduleOptions.includeAnswered ? "checked" : ""} ${lockedSatMode ? "disabled" : ""}>
+                Include answered questions
+              </label>
+            </div>
+            <div class="module-panel-actions">
+              ${!ready
+                ? `<button class="primary start-practice" disabled>Loading questions</button>`
+                : imported
+                ? `<button class="primary start-practice" data-action="create-module">${startLabel}</button>`
+                : status.canManageCatalog
+                  ? `<button class="primary start-practice" data-action="import">Import question catalog</button>`
+                  : `<button class="primary start-practice" disabled>Question catalog unavailable</button>`}
+            </div>
+          </section>
+
+          ${renderHistory()}
         </div>
-        <div class="toolbar-actions">
-          <button class="ghost" data-action="reset">Reset Progress</button>
-        </div>
+
+        <aside class="dashboard-rail" aria-label="Practice summary">
+          <section class="diagnostic-panel">
+            <span class="section-kicker">Current accuracy</span>
+            <div class="accuracy-ring" style="--accuracy:${accuracy}" aria-label="${overallAccuracy} accuracy">
+              <div><strong>${overallAccuracy}</strong><span>${formatNumber(answered)} answered</span></div>
+            </div>
+            <div class="diagnostic-split">
+              <span><small>Correct</small><strong>${formatNumber(correct)}</strong></span>
+              <span><small>Incorrect</small><strong>${formatNumber(status.incorrect || 0)}</strong></span>
+            </div>
+          </section>
+
+          <section class="review-hub">
+            <div class="section-title"><div><span class="section-kicker">Review</span><h2>Return to missed work</h2></div></div>
+            <div class="review-actions" aria-label="Question review">
+              <button class="secondary" data-action="review-incorrect" ${status.incorrect ? "" : "disabled"}>Review ${formatNumber(status.incorrect)} incorrect</button>
+              <button class="secondary" data-action="review-flagged" ${status.flagged ? "" : "disabled"}>Review ${formatNumber(status.flagged)} flagged</button>
+            </div>
+          </section>
+
+          ${status.canManageCatalog ? `<details class="catalog-details">
+            <summary>Question catalog</summary>
+            <div class="catalog-content">
+              <div>
+                <strong>${formatNumber(status.total)} questions · ${cacheLabel} cached</strong>
+                <p>${status.lastImport ? `Updated ${new Date(status.lastImport).toLocaleString()} · ${escapeHtml(status.activeSourceLabel || "College Board")}` : "No question catalog imported yet"}</p>
+                ${cacheJob.error ? `<p class="cache-error">Last issue: ${escapeHtml(cacheJob.error)}</p>` : ""}
+              </div>
+              <div class="catalog-actions">
+                <button class="secondary" data-action="import">${newPool ? "Check for new questions" : imported ? "Refresh import" : "Import questions"}</button>
+                <button class="secondary" data-action="cache-all" ${imported && !cacheJob.running && cache.remaining ? "" : "disabled"}>${cacheJob.running ? `Caching ${formatNumber(cacheJob.completed)}/${formatNumber(cacheJob.total)}` : cache.remaining ? `Cache remaining (${cachePercent}%)` : "Fully cached"}</button>
+              </div>
+            </div>
+          </details>` : ""}
+        </aside>
       </div>
-
-      <div class="stats overview-stats" aria-label="Practice overview">
-        ${statCard("Accuracy", `${overallAccuracy}%`)}
-        ${statCard("Answered", status.answered)}
-        ${statCard("Unanswered", status.unanswered)}
-        ${statCard("Flagged", status.flagged)}
-      </div>
-
-      ${renderPerformanceBreakdown()}
-
-      <section class="module-panel" aria-labelledby="practice-builder-title">
-        <div class="module-panel-heading">
-          <div>
-            <span class="section-kicker">Practice</span>
-            <h2 id="practice-builder-title">Build a practice test</h2>
-          </div>
-          <span class="source-badge">College Board</span>
-        </div>
-        <div class="mode-segments" role="group" aria-label="Practice mode">
-          ${modeOptions.map((mode) => `
-            <button type="button" class="${state.moduleOptions.mode === mode.value ? "active" : ""}" data-mode-option="${mode.value}" aria-pressed="${state.moduleOptions.mode === mode.value}">${escapeHtml(mode.label)}</button>
-          `).join("")}
-        </div>
-        <div class="field-group">
-          <label>
-            Questions
-            <input data-option="count" type="number" min="1" max="98" value="${lockedSatMode ? subject.defaultCount : state.moduleOptions.count}" ${lockedSatMode ? "disabled" : ""}>
-          </label>
-          <label>
-            Minutes
-            <input data-option="durationMinutes" type="number" min="0" max="180" value="${lockedSatMode ? subject.defaultMinutes : state.moduleOptions.durationMinutes}" ${lockedSatMode ? "disabled" : ""}>
-          </label>
-          <label class="check">
-            <input data-option="includeAnswered" type="checkbox" ${state.moduleOptions.includeAnswered ? "checked" : ""} ${lockedSatMode ? "disabled" : ""}>
-            Include answered
-          </label>
-        </div>
-        <div class="module-panel-actions">
-          ${imported
-            ? `<button class="primary start-practice" data-action="create-module">${startLabel}</button>`
-            : status.canManageCatalog
-              ? `<button class="primary start-practice" data-action="import">Import question catalog</button>`
-              : `<button class="primary start-practice" disabled>Question catalog unavailable</button>`}
-          <div class="review-actions" aria-label="Question review">
-            <button class="secondary" data-action="review-incorrect" ${status.incorrect ? "" : "disabled"}>Review ${formatNumber(status.incorrect)} incorrect</button>
-            <button class="secondary" data-action="review-flagged" ${status.flagged ? "" : "disabled"}>Review ${formatNumber(status.flagged)} flagged</button>
-          </div>
-        </div>
-      </section>
-
-      ${renderHistory()}
-
-      ${status.canManageCatalog ? `<details class="catalog-details">
-        <summary>Question catalog</summary>
-        <div class="catalog-content">
-          <div>
-            <strong>${formatNumber(status.total)} questions · ${cacheLabel} cached</strong>
-            <p>${status.lastImport ? `Updated ${new Date(status.lastImport).toLocaleString()} · ${escapeHtml(status.activeSourceLabel || "College Board")}` : "No question catalog imported yet"}</p>
-            ${cacheJob.error ? `<p class="cache-error">Last issue: ${escapeHtml(cacheJob.error)}</p>` : ""}
-          </div>
-          <div class="catalog-actions">
-            <button class="secondary" data-action="import">${newPool ? "Check for new questions" : imported ? "Refresh import" : "Import questions"}</button>
-            <button class="secondary" data-action="cache-all" ${imported && !cacheJob.running && cache.remaining ? "" : "disabled"}>${cacheJob.running ? `Caching ${formatNumber(cacheJob.completed)}/${formatNumber(cacheJob.total)}` : cache.remaining ? `Cache remaining (${cachePercent}%)` : "Fully cached"}</button>
-          </div>
-        </div>
-      </details>` : ""}
     </main>
   `;
 }
@@ -910,12 +1011,10 @@ function renderModuleHeader() {
     <header class="module-header">
       <div class="module-identity">
         <button class="ghost back-button" data-action="back-dashboard" aria-label="Return to dashboard" title="Return to dashboard">←</button>
-        <div>
-          <span class="section-kicker">${escapeHtml(currentSubject().shortLabel)}</span>
-        <h2>${escapeHtml(state.module.title)}</h2>
-        <p>${summary.answered} answered · ${summary.unanswered} unanswered · ${summary.flagged} flagged</p>
-        </div>
+        <a class="product-lockup module-product" href="/" aria-label="PEAK1600 home">${renderBrand({ compact: true })}</a>
+        <span class="module-name">${escapeHtml(state.module.title)}</span>
       </div>
+      <div class="assessment-position">Question <strong>${state.currentIndex + 1}</strong> of ${state.module.questions.length}</div>
       <div class="module-actions">
         ${remaining !== null && !submitted ? `<span class="timer" aria-label="Time remaining">${formatTime(remaining)}</span>` : ""}
         ${submitted ? `
@@ -928,6 +1027,7 @@ function renderModuleHeader() {
         ${hasResults ? `<button class="secondary" data-action="show-results">Results</button>` : ""}
         ${!submitted ? `<button class="secondary" data-action="review">Review</button>` : ""}
       </div>
+      <span class="module-summary">${summary.answered} answered · ${summary.flagged} flagged</span>
       <div class="module-progress-track" aria-hidden="true"><span style="width:${((state.currentIndex + 1) / state.module.questions.length) * 100}%"></span></div>
     </header>
   `;
@@ -970,30 +1070,39 @@ function renderQuestionBody() {
   const submitted = isReviewMode();
   const revealAnswers = submitted && !state.reviewHideAnswers;
   const flagged = flaggedFor(row.row_id);
+  const showSourcePane = state.subject === "english" && Boolean(content.stimulus);
 
   const answerBlock = hasAnswerOptions(content)
     ? renderOptions(row, content, answer, revealAnswers)
     : renderFreeResponse(row, answer, revealAnswers);
 
   return `
-    <article class="question-card">
-      <header class="question-title">
-        <div>
-          <span class="eyebrow">Question ${state.currentIndex + 1}${submitted ? ` · ${escapeHtml(formatDifficulty(row.difficulty))}` : ""}</span>
-          <h3>ID ${escapeHtml(row.question_id || row.row_id)}</h3>
-          ${submitted ? `<p>${escapeHtml(row.domain_desc || currentSubject().shortLabel)} · ${escapeHtml(row.skill_desc || "")}</p>` : ""}
-          ${submitted && state.module?.kind === "practice" ? renderTimeBreakdown(row) : ""}
-        </div>
-        <div class="question-actions">
-          ${isIncorrectReviewModule() ? `<button class="secondary danger-soft" data-action="remove-incorrect">Remove from Incorrect</button>` : ""}
-          <button class="${flagged ? "flag-on" : "secondary"}" data-action="toggle-flag" aria-pressed="${flagged}">${flagged ? "Flagged" : "Flag"}</button>
-        </div>
-      </header>
-
-      ${content.stimulus ? `<div class="content-block">${normalizeDisplayHtml(content.stimulus)}</div>` : ""}
-      ${content.stem ? `<div class="content-block stem">${normalizeDisplayHtml(content.stem)}</div>` : ""}
-      ${answerBlock}
-      ${revealAnswers ? renderExplanation(content, row) : ""}
+    <article class="question-card ${showSourcePane ? "has-stimulus" : "single-pane"}">
+      <div class="question-workspace">
+        ${showSourcePane ? `<section class="question-source-pane" aria-label="Question source material">
+          <span class="question-pane-label">Source material</span>
+          <div class="content-block">${normalizeDisplayHtml(content.stimulus)}</div>
+        </section>` : ""}
+        <section class="question-response-pane" aria-label="Question and answer choices">
+          <header class="question-title">
+            <div>
+              <span class="eyebrow">Question ${state.currentIndex + 1}${submitted ? ` · ${escapeHtml(formatDifficulty(row.difficulty))}` : ""}</span>
+              <h3>ID ${escapeHtml(row.question_id || row.row_id)}</h3>
+              ${submitted ? `<p>${escapeHtml(row.domain_desc || currentSubject().shortLabel)} · ${escapeHtml(row.skill_desc || "")}</p>` : ""}
+              ${submitted && state.module?.kind === "practice" ? renderTimeBreakdown(row) : ""}
+            </div>
+            <div class="question-actions">
+              ${isIncorrectReviewModule() ? `<button class="secondary danger-soft" data-action="remove-incorrect">Remove from incorrect</button>` : ""}
+              <button class="${flagged ? "flag-on" : "secondary"}" data-action="toggle-flag" aria-pressed="${flagged}" ${state.flagSavePromises[row.row_id] ? "disabled" : ""}>${flagged ? "Flagged" : "Flag for review"}</button>
+            </div>
+          </header>
+          ${!showSourcePane && content.stimulus ? `<div class="content-block question-inline-material">${normalizeDisplayHtml(content.stimulus)}</div>` : ""}
+          ${content.stem ? `<div class="content-block stem">${normalizeDisplayHtml(content.stem)}</div>` : ""}
+          ${answerBlock}
+          ${revealAnswers ? renderExplanation(content, row) : ""}
+          ${renderQuestionFooter()}
+        </section>
+      </div>
     </article>
   `;
 }
@@ -1176,11 +1285,10 @@ function renderModule() {
   return `
     <main class="module-shell" id="main-content">
       ${renderModuleHeader()}
-      ${renderNav()}
       <div class="question-stage">
-          ${renderQuestionBody()}
-          ${renderQuestionFooter()}
+        ${renderQuestionBody()}
       </div>
+      ${renderNav()}
       ${renderReview()}
       ${renderResults()}
       ${renderReferenceSheet()}
@@ -1191,7 +1299,7 @@ function renderModule() {
 function render() {
   app.innerHTML = `
     ${state.loading ? `<div class="busy" role="status" aria-live="polite">${escapeHtml(state.busyMessage)}</div>` : ""}
-    ${state.error ? `<div class="error" role="alert">${escapeHtml(state.error)}</div>` : ""}
+    ${state.error ? `<div class="error" role="alert"><span>${escapeHtml(state.error)}</span><button class="error-dismiss" data-action="dismiss-error" aria-label="Dismiss error" title="Dismiss error">×</button></div>` : ""}
     ${state.module ? renderModule() : renderDashboard()}
   `;
 }
@@ -1248,7 +1356,9 @@ app.addEventListener("change", async (event) => {
       render();
       return;
     }
-    await saveAnswer(row.row_id, target.value);
+    row.answer = target.value;
+    render();
+    queueAnswerSave(row.row_id, target.value);
   }
 });
 
@@ -1294,6 +1404,10 @@ app.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-action]");
   if (!button) return;
   const action = button.dataset.action;
+  if (action === "dismiss-error") {
+    setError("");
+    return;
+  }
   const row = currentQuestion();
 
   try {
@@ -1309,25 +1423,35 @@ app.addEventListener("click", async (event) => {
       render();
     }
     if (action === "back-dashboard") {
-      await flushPendingAnswerSaves();
-      await flushCurrentTime({ restart: false });
+      const persistence = Promise.all([
+        flushPendingAnswerSaves(),
+        flushPendingFlagSaves(),
+        flushCurrentTime({ restart: false })
+      ]);
       state.module = null;
       state.currentDetail = null;
       state.reviewAttempts = {};
       state.reviewHideAnswers = false;
       resetTimeTracking();
+      resetQuestionDetails();
       state.referenceOpen = false;
       state.eliminatedAnswers = {};
+      render();
+      await persistence;
       await loadStatus();
       render();
     }
     if (action === "prev") await setCurrentIndex(state.currentIndex - 1);
     if (action === "next") await setCurrentIndex(state.currentIndex + 1);
     if (action === "review") {
-      await flushPendingAnswerSaves();
-      await flushCurrentTime({ restart: false });
+      const persistence = Promise.all([
+        flushPendingAnswerSaves(),
+        flushPendingFlagSaves(),
+        flushCurrentTime({ restart: false })
+      ]);
       state.reviewOpen = true;
       render();
+      await persistence;
     }
     if (action === "close-review") {
       state.reviewOpen = false;
@@ -1358,11 +1482,7 @@ app.addEventListener("click", async (event) => {
       toggleEliminated(row.row_id, button.dataset.choice);
     }
     if (action === "toggle-flag" && row) {
-      if (isReviewMode()) {
-        await saveFlag(row.row_id, !flaggedFor(row.row_id));
-      } else {
-        await saveAnswer(row.row_id, answerFor(row.row_id), !flaggedFor(row.row_id));
-      }
+      await saveFlag(row.row_id, !flaggedFor(row.row_id));
     }
   } catch (error) {
     setError(error);

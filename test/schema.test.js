@@ -15,33 +15,46 @@ const webhookMigrationPath = fileURLToPath(new URL("../migrations/006_clerk_webh
 const webhookMigration = await readFile(webhookMigrationPath, "utf8");
 const boundsMigrationPath = fileURLToPath(new URL("../migrations/007_data_bounds.sql", import.meta.url));
 const boundsMigration = await readFile(boundsMigrationPath, "utf8");
+const responseMergeMigrationPath = fileURLToPath(new URL("../migrations/008_merge_module_responses.sql", import.meta.url));
+const responseMergeMigration = await readFile(responseMergeMigrationPath, "utf8");
 
-test("normalized test schema stores sessions, ordered modules, questions, responses, and timing separately", () => {
+test("final test schema stores response state with each assigned module question", () => {
   for (const table of [
     "test_sessions",
     "test_modules",
     "module_questions",
-    "module_responses",
     "response_time_segments"
   ]) {
     assert.match(migration, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`));
   }
+  assert.match(responseMergeMigration, /ALTER TABLE module_questions[\s\S]*ADD COLUMN answer/);
+  assert.match(responseMergeMigration, /DROP TABLE module_responses/);
   assert.doesNotMatch(migration, /question_ids/i);
 });
 
-test("normalized test schema enforces tenant-scoped membership and cascade ownership", () => {
+test("test schema enforces tenant-scoped membership and cascade ownership", () => {
   assert.match(migration, /FOREIGN KEY \(user_id, session_id\)[\s\S]*ON DELETE CASCADE/);
-  assert.match(migration, /FOREIGN KEY \(user_id, module_id, row_id\)[\s\S]*module_questions/);
   assert.match(migration, /UNIQUE \(user_id, module_id, row_id\)/);
+  assert.match(responseMergeMigration, /response_time_segments_module_question_fkey[\s\S]*REFERENCES module_questions/);
 });
 
-test("responses use PostgreSQL booleans and reject invalid elapsed values", () => {
-  assert.match(migration, /flagged boolean NOT NULL DEFAULT false/);
-  assert.match(migration, /is_correct boolean/);
-  assert.match(migration, /time_spent_seconds integer NOT NULL DEFAULT 0 CHECK \(time_spent_seconds >= 0\)/);
+test("module question responses use PostgreSQL types and enforce consistent results", () => {
+  assert.match(responseMergeMigration, /ADD COLUMN flagged boolean NOT NULL DEFAULT false/);
+  assert.match(responseMergeMigration, /ADD COLUMN is_correct boolean/);
+  assert.match(responseMergeMigration, /ADD COLUMN time_spent_seconds integer NOT NULL DEFAULT 0/);
   assert.match(migration, /pass_index smallint NOT NULL CHECK \(pass_index > 0\)/);
-  assert.match(migration, /status = 'correct' AND is_correct/);
-  assert.match(migration, /status = 'incorrect' AND NOT is_correct/);
+  assert.match(responseMergeMigration, /status = 'correct' AND is_correct/);
+  assert.match(responseMergeMigration, /status = 'incorrect' AND NOT is_correct/);
+});
+
+test("response merge copies existing data before dropping the old table", () => {
+  const copyPosition = responseMergeMigration.indexOf("UPDATE module_questions AS mq");
+  const foreignKeyPosition = responseMergeMigration.indexOf("response_time_segments_module_question_fkey");
+  const dropPosition = responseMergeMigration.indexOf("DROP TABLE module_responses");
+  assert.ok(copyPosition >= 0);
+  assert.match(responseMergeMigration, /Module response migration validation failed/);
+  assert.ok(foreignKeyPosition > copyPosition);
+  assert.ok(dropPosition > foreignKeyPosition);
 });
 
 test("question catalog has one canonical row with separate source and pool membership", () => {
@@ -75,7 +88,6 @@ test("every tenant-owned table has PostgreSQL row-level security", () => {
     "test_sessions",
     "test_modules",
     "module_questions",
-    "module_responses",
     "response_time_segments",
     "user_vocab_set_items",
     "vocab_progress",
@@ -117,7 +129,8 @@ test("Clerk webhook receipts are minimal, deduplicated, and bounded", () => {
 });
 
 test("database constraints mirror public API size and timing limits", () => {
-  assert.match(boundsMigration, /module_responses_answer_length[\s\S]*char_length\(answer\) <= 32/);
+  assert.match(responseMergeMigration, /module_questions_answer_length[\s\S]*char_length\(answer\) <= 32/);
+  assert.match(responseMergeMigration, /module_questions_time_limit[\s\S]*time_spent_seconds <= 21600/);
   assert.match(boundsMigration, /test_modules_duration_limit[\s\S]*duration_seconds <= 10800/);
   assert.match(boundsMigration, /response_time_segments_pass_limit[\s\S]*pass_index <= 200/);
   assert.match(boundsMigration, /vocab_items_definition_length[\s\S]*char_length\(definition\) <= 600/);

@@ -86,9 +86,9 @@ export function createPracticeRoutes({ service, json }) {
     }
     const clearIncorrectMatch = url.pathname.match(/^\/api\/questions\/(.+)\/clear-incorrect$/);
     if (clearIncorrectMatch && req.method === "POST") {
-      const body = await readJson(req, practiceScopeSchema);
+      await readJson(req, practiceScopeSchema);
       await service.clearIncorrectQuestion(decodedRowId(clearIncorrectMatch[1]));
-      json(res, 200, { success: true, data: await service.getStatus(body.subject, body.pool) });
+      json(res, 200, { success: true });
       return true;
     }
     return false;

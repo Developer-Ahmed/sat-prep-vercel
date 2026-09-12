@@ -108,7 +108,7 @@ export function createDatabase({ queryClient, transactionClientFactory }) {
         WITH tenant_tables(name) AS (
           VALUES
             ('app_users'), ('progress'), ('test_sessions'), ('test_modules'),
-            ('module_questions'), ('module_responses'), ('response_time_segments'),
+            ('module_questions'), ('response_time_segments'),
             ('user_vocab_set_items'), ('vocab_progress'), ('vocab_reviews')
         ), tenant_state AS (
           SELECT
@@ -145,7 +145,7 @@ export function createDatabase({ queryClient, transactionClientFactory }) {
       `);
       const row = (result.rows || result)[0];
       const safe = row
-        && Number(row.table_count) === 10
+        && Number(row.table_count) === 9
         && !row.rolsuper
         && !row.rolbypassrls
         && !row.owns_tenant_table

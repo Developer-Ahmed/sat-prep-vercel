@@ -1,5 +1,6 @@
 export const SIGN_IN_PATH = "/sign-in";
-export const PROTECTED_ROUTE_ROOTS = Object.freeze(["/", "/math", "/english", "/new", "/vocab"]);
+export const PUBLIC_ROUTE_ROOTS = Object.freeze(["/", "/home", "/about"]);
+export const PROTECTED_ROUTE_ROOTS = Object.freeze(["/math", "/english", "/new", "/vocab"]);
 
 function matchesRoute(pathname, route) {
   return pathname === route || pathname.startsWith(`${route}/`);
@@ -13,8 +14,12 @@ export function isProtectedPath(pathname) {
   return PROTECTED_ROUTE_ROOTS.includes(pathname);
 }
 
+export function isPublicPath(pathname) {
+  return PUBLIC_ROUTE_ROOTS.includes(pathname);
+}
+
 export function isKnownPath(pathname) {
-  return isProtectedPath(pathname) || isAuthenticationPath(pathname);
+  return isPublicPath(pathname) || isProtectedPath(pathname) || isAuthenticationPath(pathname);
 }
 
 export function clerkLoadOptions({ ClerkUI, proxyUrl = "" }) {
