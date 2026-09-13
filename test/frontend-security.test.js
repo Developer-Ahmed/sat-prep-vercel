@@ -9,6 +9,7 @@ const vocabSource = await readFile(new URL("../public/vocab.js", import.meta.url
 const browserSource = await readFile(new URL("../public/shared/browser.js", import.meta.url), "utf8");
 const sharedUiSource = await readFile(new URL("../public/shared/ui.js", import.meta.url), "utf8");
 const themeSource = await readFile(new URL("../public/theme.js", import.meta.url), "utf8");
+const analyticsSource = await readFile(new URL("../public/analytics.js", import.meta.url), "utf8");
 const indexSource = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
 const designSource = await readFile(new URL("../public/design.css", import.meta.url), "utf8");
 
@@ -40,6 +41,16 @@ test("the validated theme preference runs before styles paint", () => {
   assert.match(themeSource, /value === "light" \|\| value === "dark"/);
   assert.match(themeSource, /localStorage\.setItem\(storageKey, theme\)/);
   assert.ok(indexSource.indexOf('src="/theme.js"') < indexSource.indexOf('href="/design.css"'));
+});
+
+test("Vercel analytics loads once outside local development without reporting URL parameters", () => {
+  assert.match(indexSource, /<script src="\/analytics\.js" defer><\/script>/);
+  assert.match(analyticsSource, /localHosts\.has\(window\.location\.hostname\)/);
+  assert.match(analyticsSource, /script\.src = "\/_vercel\/insights\/script\.js"/);
+  assert.match(analyticsSource, /window\.va\("beforeSend"/);
+  assert.match(analyticsSource, /url\.search = ""/);
+  assert.match(analyticsSource, /url\.hash = ""/);
+  assert.doesNotMatch(indexSource, /@vercel\/analytics\/next/);
 });
 
 test("light-mode controls retain legible selected and disabled states", () => {
