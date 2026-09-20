@@ -12,6 +12,9 @@ const themeSource = await readFile(new URL("../public/theme.js", import.meta.url
 const analyticsSource = await readFile(new URL("../public/analytics.js", import.meta.url), "utf8");
 const indexSource = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
 const designSource = await readFile(new URL("../public/design.css", import.meta.url), "utf8");
+const humanSource = await readFile(new URL("../public/human.css", import.meta.url), "utf8");
+const homeSource = await readFile(new URL("../public/home.js", import.meta.url), "utf8");
+const aboutSource = await readFile(new URL("../public/about.js", import.meta.url), "utf8");
 
 test("primary navigation exposes the current product areas without the retired new-question tab", () => {
   for (const href of ["/", "/math", "/english", "/vocab", "/about"]) {
@@ -25,7 +28,7 @@ test("the product identity uses a dedicated summit mark and authentication progr
   assert.match(sharedUiSource, /class="product-symbol-accent"/);
   assert.doesNotMatch(sharedUiSource, /product-symbol" aria-hidden="true">P</);
   assert.match(authSource, /function renderAuthProgressArt\(\)/);
-  assert.match(authSource, /Practice[\s\S]{0,80}Review[\s\S]{0,80}Retain/);
+  assert.match(authSource, /Practice[\s\S]{0,80}Understand[\s\S]{0,80}Return/);
   assert.doesNotMatch(authSource, /auth-peak-art/);
 });
 
@@ -41,6 +44,27 @@ test("the validated theme preference runs before styles paint", () => {
   assert.match(themeSource, /value === "light" \|\| value === "dark"/);
   assert.match(themeSource, /localStorage\.setItem\(storageKey, theme\)/);
   assert.ok(indexSource.indexOf('src="/theme.js"') < indexSource.indexOf('href="/design.css"'));
+});
+
+test("the human-centered presentation layer loads last and supports both themes", () => {
+  assert.ok(indexSource.indexOf('href="/human.css"') > indexSource.indexOf('href="/design.css"'));
+  assert.match(humanSource, /html\[data-theme="light"\]/);
+  assert.match(humanSource, /html\[data-theme="dark"\]/);
+  assert.match(humanSource, /url\("\/student-study\.jpg"\)/);
+  assert.match(humanSource, /@media \(max-width: 620px\)/);
+  assert.match(humanSource, /@media \(prefers-reduced-motion: reduce\)/);
+});
+
+test("public pages use original visuals and concise study-focused language", () => {
+  for (const asset of ["math-study.jpg", "reading-study.jpg", "vocab-study.jpg"]) {
+    assert.match(homeSource, new RegExp(`/${asset.replace(".", "\\.")}`));
+  }
+  assert.match(homeSource, /class="study-loop-visual"/);
+  assert.match(homeSource, /class="review-snapshot"/);
+  assert.match(aboutSource, /\/building-peak\.jpg/);
+  assert.match(aboutSource, /concepts I had not learned yet/);
+  assert.doesNotMatch(`${homeSource}\n${aboutSource}`, /During the test, the question stays at the center/);
+  assert.doesNotMatch(aboutSource, /I am continuing to improve PEAK1600/);
 });
 
 test("Vercel analytics loads once outside local development without reporting URL parameters", () => {

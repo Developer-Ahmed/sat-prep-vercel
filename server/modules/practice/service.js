@@ -3,13 +3,12 @@ import { HttpError } from "../../platform/http.js";
 import { gradeAnswer } from "./grading.js";
 import { chooseFillableQuota, orderRealisticRows, realisticQuotaOptions } from "./module-policy.js";
 
-export function createPracticeService({ db, currentUserId, catalog, isAdmin }) {
+export function createPracticeService({ db, currentUserId, catalog }) {
   const {
     activeSourceFor,
     getQuestionContents,
     isAnsweredStatus,
-    normalizePool,
-    sourceLabel
+    normalizePool
   } = catalog;
 
   function now() {
@@ -25,25 +24,22 @@ export function createPracticeService({ db, currentUserId, catalog, isAdmin }) {
         SELECT
           q.domain_desc,
           q.skill_desc,
-          q.excluded_bluebook,
-          q.imported_at,
           p.status,
           p.flagged
         FROM question_catalog q
         LEFT JOIN progress p ON p.user_id = ? AND p.row_id = q.row_id
         WHERE q.subject = ?
           AND q.pool = ?
+          AND q.source = 'peak1600'
       ), summary AS (
         SELECT
           COUNT(*) AS total,
-          COUNT(*) FILTER (WHERE excluded_bluebook) AS excluded,
-          COUNT(*) FILTER (WHERE NOT excluded_bluebook) AS available,
-          COUNT(*) FILTER (WHERE NOT excluded_bluebook AND (status IS NULL OR status IN ('unanswered', 'skipped'))) AS unanswered,
-          COUNT(*) FILTER (WHERE NOT excluded_bluebook AND status IN ('correct', 'incorrect')) AS answered,
-          COUNT(*) FILTER (WHERE NOT excluded_bluebook AND status = 'correct') AS correct,
-          COUNT(*) FILTER (WHERE NOT excluded_bluebook AND status = 'incorrect') AS incorrect,
-          COUNT(*) FILTER (WHERE NOT excluded_bluebook AND COALESCE(flagged, false)) AS flagged,
-          MAX(imported_at) AS imported_at
+          COUNT(*) AS available,
+          COUNT(*) FILTER (WHERE status IS NULL OR status IN ('unanswered', 'skipped')) AS unanswered,
+          COUNT(*) FILTER (WHERE status IN ('correct', 'incorrect')) AS answered,
+          COUNT(*) FILTER (WHERE status = 'correct') AS correct,
+          COUNT(*) FILTER (WHERE status = 'incorrect') AS incorrect,
+          COUNT(*) FILTER (WHERE COALESCE(flagged, false)) AS flagged
         FROM scoped
       ), performance AS (
         SELECT
@@ -54,7 +50,6 @@ export function createPracticeService({ db, currentUserId, catalog, isAdmin }) {
           COUNT(*) FILTER (WHERE status = 'incorrect') AS incorrect,
           COUNT(*) FILTER (WHERE status IN ('correct', 'incorrect')) AS answered
         FROM scoped
-        WHERE NOT excluded_bluebook
         GROUP BY
           COALESCE(NULLIF(TRIM(domain_desc), ''), 'Math'),
           COALESCE(NULLIF(TRIM(skill_desc), ''), 'Uncategorized')
@@ -113,10 +108,8 @@ export function createPracticeService({ db, currentUserId, catalog, isAdmin }) {
       }, {})
     ).sort((a, b) => a.domain.localeCompare(b.domain));
 
-    const activeSource = status.active_source || "";
     return {
       total: Number(status.total || 0),
-      excluded: Number(status.excluded || 0),
       available: Number(status.available || 0),
       unanswered: Number(status.unanswered || 0),
       answered: Number(status.answered || 0),
@@ -125,11 +118,8 @@ export function createPracticeService({ db, currentUserId, catalog, isAdmin }) {
       flagged: Number(status.flagged || 0),
       subject: subjectKey,
       pool: poolKey,
-      activeSource,
-      activeSourceLabel: sourceLabel(activeSource),
-      lastImport: status.imported_at || null,
-      performanceByDomain,
-      canManageCatalog: isAdmin(userId)
+      activeSource: status.active_source || "",
+      performanceByDomain
     };
   }
 
@@ -149,7 +139,7 @@ export function createPracticeService({ db, currentUserId, catalog, isAdmin }) {
       .all(userId, normalizeSubject(subject), normalizePool(pool), limit);
   }
 
-  async function selectCollegeBoardDomainRows(domain, limit, excludedRowIds = [], subject = "math", pool = "main") {
+  async function selectOriginalDomainRows(domain, limit, excludedRowIds = [], subject = "math", pool = "main") {
     const userId = currentUserId();
     const excludeClause = excludedRowIds.length
       ? `AND q.row_id NOT IN (${excludedRowIds.map(() => "?").join(",")})`
@@ -159,10 +149,9 @@ export function createPracticeService({ db, currentUserId, catalog, isAdmin }) {
         SELECT q.row_id, q.domain_desc, q.skill_desc
         FROM question_catalog q
         LEFT JOIN progress p ON p.user_id = ? AND p.row_id = q.row_id
-        WHERE q.source = 'collegeboard'
+        WHERE q.source = 'peak1600'
           AND q.subject = ?
           AND q.pool = ?
-          AND NOT q.excluded_bluebook
           AND TRIM(q.domain_desc) = ?
           AND (p.status IS NULL OR p.status IN ('unanswered', 'skipped'))
           ${excludeClause}
@@ -172,7 +161,7 @@ export function createPracticeService({ db, currentUserId, catalog, isAdmin }) {
       .all(userId, normalizeSubject(subject), normalizePool(pool), domain, ...excludedRowIds, limit);
   }
 
-  async function selectCollegeBoardAnyRows(limit, excludedRowIds = [], subject = "math", pool = "main") {
+  async function selectOriginalAnyRows(limit, excludedRowIds = [], subject = "math", pool = "main") {
     const userId = currentUserId();
     const excludeClause = excludedRowIds.length
       ? `AND q.row_id NOT IN (${excludedRowIds.map(() => "?").join(",")})`
@@ -182,10 +171,9 @@ export function createPracticeService({ db, currentUserId, catalog, isAdmin }) {
         SELECT q.row_id, q.domain_desc, q.skill_desc
         FROM question_catalog q
         LEFT JOIN progress p ON p.user_id = ? AND p.row_id = q.row_id
-        WHERE q.source = 'collegeboard'
+        WHERE q.source = 'peak1600'
           AND q.subject = ?
           AND q.pool = ?
-          AND NOT q.excluded_bluebook
           AND (p.status IS NULL OR p.status IN ('unanswered', 'skipped'))
           ${excludeClause}
         ORDER BY random()
@@ -194,32 +182,7 @@ export function createPracticeService({ db, currentUserId, catalog, isAdmin }) {
       .all(userId, normalizeSubject(subject), normalizePool(pool), ...excludedRowIds, limit);
   }
 
-  async function selectCollegeBoardDifficultyRows(difficulties, limit, excludedRowIds = [], subject = "math", pool = "main") {
-    const userId = currentUserId();
-    const safeDifficulties = difficulties.map((difficulty) => String(difficulty).toUpperCase()).filter(Boolean);
-    if (!safeDifficulties.length) return [];
-    const excludeClause = excludedRowIds.length
-      ? `AND q.row_id NOT IN (${excludedRowIds.map(() => "?").join(",")})`
-      : "";
-    return await db
-      .prepare(`
-        SELECT q.row_id, q.domain_desc, q.skill_desc
-        FROM question_catalog q
-        LEFT JOIN progress p ON p.user_id = ? AND p.row_id = q.row_id
-        WHERE q.source = 'collegeboard'
-          AND q.subject = ?
-          AND q.pool = ?
-          AND NOT q.excluded_bluebook
-          AND UPPER(TRIM(q.difficulty)) IN (${safeDifficulties.map(() => "?").join(",")})
-          AND (p.status IS NULL OR p.status IN ('unanswered', 'skipped'))
-          ${excludeClause}
-        ORDER BY random()
-        LIMIT ?
-      `)
-      .all(userId, normalizeSubject(subject), normalizePool(pool), ...safeDifficulties, ...excludedRowIds, limit);
-  }
-
-  async function getCollegeBoardUnansweredDomainCounts(excludedRowIds = [], subject = "math", pool = "main") {
+  async function getOriginalUnansweredDomainCounts(excludedRowIds = [], subject = "math", pool = "main") {
     const userId = currentUserId();
     const excludeClause = excludedRowIds.length
       ? `AND q.row_id NOT IN (${excludedRowIds.map(() => "?").join(",")})`
@@ -232,10 +195,9 @@ export function createPracticeService({ db, currentUserId, catalog, isAdmin }) {
             COUNT(*) AS available
           FROM question_catalog q
           LEFT JOIN progress p ON p.user_id = ? AND p.row_id = q.row_id
-          WHERE q.source = 'collegeboard'
+          WHERE q.source = 'peak1600'
             AND q.subject = ?
             AND q.pool = ?
-            AND NOT q.excluded_bluebook
             AND (p.status IS NULL OR p.status IN ('unanswered', 'skipped'))
             ${excludeClause}
           GROUP BY COALESCE(NULLIF(TRIM(q.domain_desc), ''), 'Math')
@@ -249,13 +211,13 @@ export function createPracticeService({ db, currentUserId, catalog, isAdmin }) {
     const subjectKey = normalizeSubject(subject);
     const poolKey = normalizePool(pool);
     const quotaOptions = realisticQuotaOptions(subjectKey);
-    const counts = await getCollegeBoardUnansweredDomainCounts(excludedRowIds, subjectKey, poolKey);
+    const counts = await getOriginalUnansweredDomainCounts(excludedRowIds, subjectKey, poolKey);
     const selected = chooseFillableQuota(counts, subjectKey);
     if (!selected) {
       const domainSummary = Object.keys(quotaOptions[0])
         .map((domain) => `${domain}: ${counts[domain] || 0} unanswered`)
         .join("; ");
-      throw new HttpError(409, "INSUFFICIENT_QUESTIONS", `Not enough unanswered College Board questions for a realistic module. ${domainSummary}.`);
+      throw new HttpError(409, "INSUFFICIENT_QUESTIONS", `Not enough unanswered original questions for a balanced module. ${domainSummary}.`);
     }
     return selected;
   }
@@ -331,20 +293,20 @@ export function createPracticeService({ db, currentUserId, catalog, isAdmin }) {
     const subjectKey = normalizeSubject(subject);
     const poolKey = normalizePool(pool);
     const config = subjectConfig(subjectKey);
-    if ((await activeSourceFor(subjectKey, poolKey)) !== "collegeboard") {
-      throw new HttpError(409, "CATALOG_NOT_READY", "Realistic SAT mode only works with the College Board official import.");
+    if ((await activeSourceFor(subjectKey, poolKey)) !== "peak1600") {
+      throw new HttpError(409, "CATALOG_NOT_READY", "The PEAK1600 original question bank has not been seeded.");
     }
     const selectedQuota = quota || await chooseRealisticQuota(excludedRowIds, subjectKey, poolKey);
     const rows = (await Promise.all(Object.entries(selectedQuota).map(([domain, limit]) =>
-      selectCollegeBoardDomainRows(domain, limit, excludedRowIds, subjectKey, poolKey)
+      selectOriginalDomainRows(domain, limit, excludedRowIds, subjectKey, poolKey)
     ))).flat();
     if (rows.length !== config.defaultCount) {
-      throw new HttpError(409, "INSUFFICIENT_QUESTIONS", "Could not create a realistic module from the available unanswered College Board questions.");
+      throw new HttpError(409, "INSUFFICIENT_QUESTIONS", "Could not create a balanced module from the available unanswered original questions.");
     }
     const orderedRows = orderRealisticRows(rows, subjectKey);
     return createModuleRecord(
       orderedRows.map((row) => row.row_id),
-      sectionId ? `${config.label} section module ${sectionOrder} of 2` : `${config.defaultCount}-question realistic ${config.label} module`,
+      sectionId ? `${config.label} section module ${sectionOrder} of 2` : `${config.defaultCount}-question balanced ${config.label} module`,
       config.defaultMinutes,
       "practice",
       null,
@@ -357,16 +319,16 @@ export function createPracticeService({ db, currentUserId, catalog, isAdmin }) {
     const poolKey = normalizePool(pool);
     const config = subjectConfig(subjectKey);
     const rows = (await Promise.all(Object.entries(quota).map(([domain, limit]) =>
-      selectCollegeBoardDomainRows(domain, limit, excludedRowIds, subjectKey, poolKey)
+      selectOriginalDomainRows(domain, limit, excludedRowIds, subjectKey, poolKey)
     ))).flat();
 
     const missing = config.defaultCount - rows.length;
     if (missing > 0) {
-      rows.push(...await selectCollegeBoardAnyRows(missing, [...excludedRowIds, ...rows.map((row) => row.row_id)], subjectKey, poolKey));
+      rows.push(...await selectOriginalAnyRows(missing, [...excludedRowIds, ...rows.map((row) => row.row_id)], subjectKey, poolKey));
     }
 
     if (rows.length !== config.defaultCount) {
-      throw new HttpError(409, "INSUFFICIENT_QUESTIONS", `Could not create a full ${config.label} section module from the available unanswered College Board questions.`);
+      throw new HttpError(409, "INSUFFICIENT_QUESTIONS", `Could not create a full ${config.label} section module from the available unanswered original questions.`);
     }
 
     const orderedRows = orderRealisticRows(rows, subjectKey);
@@ -380,41 +342,20 @@ export function createPracticeService({ db, currentUserId, catalog, isAdmin }) {
     );
   }
 
-  async function createAdaptiveSectionModule({ sectionId, sectionOrder, excludedRowIds = [], subject = "math", pool = "new", summaryOnly = false }) {
-    const subjectKey = normalizeSubject(subject);
-    const poolKey = normalizePool(pool);
-    const config = subjectConfig(subjectKey);
-    const difficulties = Number(sectionOrder) === 1 ? ["E", "M"] : ["M", "H"];
-    const rows = await selectCollegeBoardDifficultyRows(difficulties, config.defaultCount, excludedRowIds, subjectKey, poolKey);
-    if (rows.length !== config.defaultCount) {
-      throw new HttpError(409, "INSUFFICIENT_QUESTIONS", `Could not create adaptive ${config.label} module ${sectionOrder}; not enough unanswered ${difficulties.join("/")} new questions.`);
-    }
-    const orderedRows = orderRealisticRows(rows, subjectKey);
-    return createModuleRecord(
-      orderedRows.map((row) => row.row_id),
-      `New ${config.label} adaptive section module ${sectionOrder} of 2`,
-      config.defaultMinutes,
-      "practice",
-      null,
-      { sectionId, sectionOrder, subject: subjectKey, pool: poolKey, summaryOnly }
-    );
-  }
-
   async function createModule({ count = 22, includeAnswered = false, durationMinutes = 35, mode = "random", subject = "math", pool = "main" }) {
     const subjectKey = normalizeSubject(subject);
     const poolKey = normalizePool(pool);
     const config = subjectConfig(subjectKey);
     if (mode === "realistic") return createRealisticModule({ subject: subjectKey, pool: poolKey });
     if (mode === "section") return createSection(subjectKey, poolKey);
-    if (mode === "adaptive") return createAdaptiveSection(subjectKey, poolKey);
     const limit = Math.max(1, Math.min(Number(count) || config.defaultCount, 98));
     const where = includeAnswered
-      ? "NOT q.excluded_bluebook"
-      : "NOT q.excluded_bluebook AND (p.status IS NULL OR p.status IN ('unanswered', 'skipped'))";
+      ? "q.source = 'peak1600'"
+      : "q.source = 'peak1600' AND (p.status IS NULL OR p.status IN ('unanswered', 'skipped'))";
     const rows = await selectRows(where, limit, subjectKey, poolKey);
 
     if (!rows.length) {
-      throw new HttpError(409, "NO_ELIGIBLE_QUESTIONS", "No eligible questions found. Import questions or include answered questions.");
+      throw new HttpError(409, "NO_ELIGIBLE_QUESTIONS", "No eligible original questions were found. Include answered questions or reseed the question bank.");
     }
 
     const ids = rows.map((row) => row.row_id);
@@ -427,8 +368,8 @@ export function createPracticeService({ db, currentUserId, catalog, isAdmin }) {
   async function createSection(subject = "math", pool = "main") {
     const subjectKey = normalizeSubject(subject);
     const poolKey = normalizePool(pool);
-    if ((await activeSourceFor(subjectKey, poolKey)) !== "collegeboard") {
-      throw new HttpError(409, "CATALOG_NOT_READY", "Section mode only works with the College Board official import.");
+    if ((await activeSourceFor(subjectKey, poolKey)) !== "peak1600") {
+      throw new HttpError(409, "CATALOG_NOT_READY", "The PEAK1600 original question bank has not been seeded.");
     }
     const sectionId = await createSectionSession(subjectKey, poolKey);
     const quotaOptions = realisticQuotaOptions(subjectKey);
@@ -464,35 +405,6 @@ export function createPracticeService({ db, currentUserId, catalog, isAdmin }) {
     }
   }
 
-  async function createAdaptiveSection(subject = "math", pool = "new") {
-    const subjectKey = normalizeSubject(subject);
-    const poolKey = normalizePool(pool);
-    if (poolKey !== "new") {
-      throw new HttpError(400, "INVALID_PRACTICE_MODE", "Adaptive new-question sections are only available in the New Questions tab.");
-    }
-    if ((await activeSourceFor(subjectKey, poolKey)) !== "collegeboard") {
-      throw new HttpError(409, "CATALOG_NOT_READY", "Import new College Board questions before creating an adaptive section.");
-    }
-
-    const sectionId = await createSectionSession(subjectKey, poolKey);
-    let first;
-    try {
-      first = await createAdaptiveSectionModule({ sectionId, sectionOrder: 1, subject: subjectKey, pool: poolKey });
-      const second = await createAdaptiveSectionModule({
-        sectionId,
-        sectionOrder: 2,
-        excludedRowIds: first.questionIds,
-        subject: subjectKey,
-        pool: poolKey,
-        summaryOnly: true
-      });
-      return { ...first, next_section_module_id: second.id };
-    } catch (error) {
-      await db.prepare("DELETE FROM test_sessions WHERE id = ? AND user_id = ?").run(sectionId, currentUserId());
-      throw error;
-    }
-  }
-
   async function createReviewModule({ mode, count = 22, durationMinutes = 0, subject = "math", pool = "main" }) {
     const subjectKey = normalizeSubject(subject);
     const poolKey = normalizePool(pool);
@@ -500,11 +412,11 @@ export function createPracticeService({ db, currentUserId, catalog, isAdmin }) {
     const reviewModes = {
       incorrect: {
         title: "Incorrect question review",
-        where: "NOT q.excluded_bluebook AND p.status = 'incorrect'"
+        where: "q.source = 'peak1600' AND p.status = 'incorrect'"
       },
       flagged: {
         title: "Flagged question review",
-        where: "NOT q.excluded_bluebook AND COALESCE(p.flagged, false)"
+        where: "q.source = 'peak1600' AND COALESCE(p.flagged, false)"
       }
     };
     const config = reviewModes[mode];
@@ -578,7 +490,7 @@ export function createPracticeService({ db, currentUserId, catalog, isAdmin }) {
     if (!module) return null;
     const [questionRows, timeSegments, nextSectionModule] = await Promise.all([
       db.prepare(`
-        SELECT q.row_id, q.source, q.subject, q.question_id, q.uid, q.external_id, q.ibn, q.domain_desc,
+        SELECT q.row_id, q.source, q.subject, q.question_id, q.domain_desc,
                q.skill_desc, q.difficulty, COALESCE(p.flagged, false) AS flagged,
                p.status, mq.answer, mq.flagged AS module_flagged, mq.is_correct,
                mq.time_spent_seconds,

@@ -19,7 +19,7 @@ test("authentication routing recognizes every deployed application route", async
   const rewrites = new Set(vercel.rewrites.map(({ source }) => source));
 
   assert.deepEqual(PUBLIC_ROUTE_ROOTS, ["/", "/home", "/about"]);
-  assert.deepEqual(PROTECTED_ROUTE_ROOTS, ["/math", "/english", "/new", "/vocab"]);
+  assert.deepEqual(PROTECTED_ROUTE_ROOTS, ["/math", "/english", "/vocab"]);
   for (const route of [...PUBLIC_ROUTE_ROOTS, ...PROTECTED_ROUTE_ROOTS].filter((route) => route !== "/")) {
     assert.ok(rewrites.has(route), `${route} must have a matching Vercel rewrite`);
   }

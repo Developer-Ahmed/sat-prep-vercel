@@ -2,7 +2,7 @@
 
 ## Architectural position
 
-The application is a serverless modular monolith. Vercel serves a static browser application and routes `/api/*` to one Node.js function. A separate minimal `/__clerk/*` function proxies Clerk Frontend API traffic for provider-domain deployments without loading the database or product modules. Clerk owns identity, Neon PostgreSQL owns durable application data, and College Board is an upstream catalog provider.
+The application is a serverless modular monolith. Vercel serves a static browser application and routes `/api/*` to one Node.js function. A separate minimal `/__clerk/*` function proxies Clerk Frontend API traffic for provider-domain deployments without loading the database or product modules. Clerk owns identity, Neon PostgreSQL owns durable application data, and a versioned, independently authored question bank is seeded during releases.
 
 This deployment shape is intentional. The product has one team, one transactional data store, and tightly related practice and vocabulary workflows. Separate microservices would add network failure modes, distributed tracing requirements, duplicate authorization logic, and higher operating cost without creating a useful scaling boundary.
 
@@ -14,7 +14,7 @@ flowchart LR
   ClerkProxy --> Clerk[Clerk]
   Browser --> API[Vercel Node API]
   API --> Neon[Neon PostgreSQL]
-  API --> CollegeBoard[College Board question bank]
+  Release[Controlled release seed] --> Neon
   Clerk --> Webhook[Clerk webhook endpoint]
   Webhook --> Neon
 ```
@@ -33,7 +33,7 @@ server/
     http/                 routing, validation, errors, response contracts
     observability/        request IDs, logs, metrics, traces
   modules/
-    catalog/              College Board import, content cache, pools
+    catalog/              original bank, immutable runtime reads, pools
     practice/             sessions, modules, answers, timing, grading
     vocabulary/           sets, scheduling, reviews, custom words
     users/                user lifecycle and deletion
@@ -66,10 +66,12 @@ Clerk frontend traffic follows a smaller independent path: Vercel rewrites `/__c
 
 PostgreSQL remains the system of record. Shared reference data and tenant data are intentionally separated:
 
-- Shared: question catalog, source identifiers, pool memberships, cached question content, built-in vocabulary.
+- Shared: original question catalog, source identifiers, pool memberships, question content, built-in vocabulary.
 - Tenant-owned: progress, test sessions, responses, timing, custom vocabulary membership, and review history.
 
 Composite foreign keys prevent a child row from being attached to another user's parent. RLS is defense in depth beneath API authorization. Migrations remain append-only, checksummed, transactionally applied, and executed with a separate owner credential.
+
+Question-bank releases follow `docs/CONTENT_POLICY.md`. Stable domain-local IDs preserve progress across additive releases, and meaning-changing corrections receive new IDs instead of rewriting a user's historical question in place.
 
 Raw SQL remains appropriate for the current query-heavy workload. An ORM is not an architectural requirement. The custom question-mark placeholder converter should eventually be replaced with native PostgreSQL parameters or a mature typed SQL layer after the server moves to TypeScript.
 
@@ -78,7 +80,7 @@ Raw SQL remains appropriate for the current query-heavy workload. An ORM is not 
 - Every external request has a deadline, bounded response size, and retries only for transient failures.
 - Every API response carries a request ID; logs are structured and omit credentials and tokens.
 - State-changing operations that clients may retry use idempotency keys or database constraints.
-- Bulk catalog work must use a durable queue or workflow, never an in-memory serverless task.
+- Catalog releases are checksummed, validated, and seeded with the owner credential; the runtime role has read-only catalog access.
 - Authentication and webhook verification should use Clerk's maintained backend helpers.
 - Untrusted or upstream HTML must be sanitized with a maintained allowlist sanitizer before rendering.
 - Vercel WAF protects coarse request volume; application-level limits protect expensive per-user operations.
@@ -109,4 +111,4 @@ Raw SQL remains appropriate for the current query-heavy workload. An ORM is not 
 - **A complete framework rewrite:** rewriting working behavior before contract tests exist increases risk and delays security work.
 - **In-memory rate limits or jobs on Vercel:** instances are ephemeral and do not provide durable global coordination.
 
-The local-only bulk cache job is disabled on Vercel. Hosted question content is cached transactionally on demand. Global request limiting belongs at Vercel's edge, where it is consistent across function instances.
+Question content is fully seeded before deployment; the hosted application never fetches or mutates the shared bank. Global request limiting belongs at Vercel's edge, where it is consistent across function instances.

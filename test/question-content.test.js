@@ -32,7 +32,7 @@ test("question content preserves SAT tables, MathML, and safe answer formatting"
   assert.deepEqual(content.correct_answer, ["A"]);
 });
 
-test("question HTML preserves safe official SVG presentation without allowing executable CSS", () => {
+test("question HTML preserves safe SVG presentation without allowing executable CSS", () => {
   const dirty = `
     <svg viewBox="0 0 20 20">
       <defs><path id="axis-mark" d="M0 0 L0 2"></path></defs>

@@ -15,9 +15,6 @@ test("dashboard bootstrap starts independent feature reads together", async () =
       getStatus: (subject, pool) => pending("status", { subject, pool }),
       listModules: () => pending("modules", [{ id: 1 }])
     },
-    catalog: {
-      publicCacheJob: () => pending("cache", { running: false })
-    },
     json(_res, status, body) {
       responses.push({ status, body });
     }
@@ -28,7 +25,7 @@ test("dashboard bootstrap starts independent feature reads together", async () =
     {},
     new URL("https://sat.example/api/dashboard?subject=english&pool=main")
   );
-  assert.deepEqual(calls, ["status", "modules", "cache"]);
+  assert.deepEqual(calls, ["status", "modules"]);
   completions.forEach((complete) => complete());
 
   assert.equal(await result, true);
@@ -38,14 +35,13 @@ test("dashboard bootstrap starts independent feature reads together", async () =
       success: true,
       data: {
         status: { subject: "english", pool: "main" },
-        modules: [{ id: 1 }],
-        cacheJob: { running: false }
+        modules: [{ id: 1 }]
       }
     }
   });
 });
 
 test("dashboard bootstrap ignores unrelated routes", async () => {
-  const handle = createDashboardRoutes({ practice: {}, catalog: {}, json() {} });
+  const handle = createDashboardRoutes({ practice: {}, json() {} });
   assert.equal(await handle({ method: "GET" }, {}, new URL("https://sat.example/api/status")), false);
 });

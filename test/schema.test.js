@@ -17,6 +17,8 @@ const boundsMigrationPath = fileURLToPath(new URL("../migrations/007_data_bounds
 const boundsMigration = await readFile(boundsMigrationPath, "utf8");
 const responseMergeMigrationPath = fileURLToPath(new URL("../migrations/008_merge_module_responses.sql", import.meta.url));
 const responseMergeMigration = await readFile(responseMergeMigrationPath, "utf8");
+const originalCatalogMigrationPath = fileURLToPath(new URL("../migrations/010_replace_college_board_catalog.sql", import.meta.url));
+const originalCatalogMigration = await readFile(originalCatalogMigrationPath, "utf8");
 
 test("final test schema stores response state with each assigned module question", () => {
   for (const table of [
@@ -63,12 +65,20 @@ test("question catalog has one canonical row with separate source and pool membe
   assert.match(initialMigration, /CREATE TABLE IF NOT EXISTS question_pool_memberships/);
   assert.match(initialMigration, /PRIMARY KEY \(question_row_id, pool\)/);
   assert.match(initialMigration, /CREATE VIEW question_catalog/);
+  assert.match(originalCatalogMigration, /CHECK \(source IN \('peak1600'\)\)/);
+  assert.match(originalCatalogMigration, /CHECK \(pool IN \('main'\)\)/);
+  assert.match(originalCatalogMigration, /CREATE VIEW question_catalog/);
+  assert.doesNotMatch(
+    originalCatalogMigration.slice(originalCatalogMigration.indexOf("CREATE VIEW question_catalog")),
+    /excluded_bluebook|\buid\b|external_id|\bibn\b/
+  );
 });
 
 test("catalog content and state use native PostgreSQL types", () => {
   assert.match(initialMigration, /raw_json jsonb NOT NULL/);
   assert.match(initialMigration, /data_json jsonb NOT NULL/);
   assert.match(initialMigration, /excluded_bluebook boolean NOT NULL DEFAULT false/);
+  assert.match(originalCatalogMigration, /DROP COLUMN excluded_bluebook/);
   assert.match(initialMigration, /flagged boolean NOT NULL DEFAULT false/);
   assert.match(initialMigration, /status IN \('correct', 'incorrect'\) AND answered_at IS NOT NULL/);
   assert.match(initialMigration, /correct = \(rating <> 'again'\)/);

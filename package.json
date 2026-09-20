@@ -16,7 +16,7 @@
     "dev": "node --no-warnings --env-file-if-exists=.env.local server/index.js",
     "db:migrate": "node --no-warnings --env-file-if-exists=.env.local scripts/migrate.js",
     "db:grant-runtime": "node --no-warnings --env-file-if-exists=.env.local scripts/grant-runtime.js",
-    "catalog:import": "node --no-warnings --env-file-if-exists=.env.local scripts/import-question-catalog.js",
+    "catalog:seed": "node --no-warnings --env-file-if-exists=.env.local scripts/seed-original-question-bank.js",
     "db:seed:reference": "node --no-warnings --env-file-if-exists=.env.local scripts/seed-reference-data.js",
     "db:reset:preproduction": "node --no-warnings --env-file-if-exists=.env.local scripts/reset-preproduction.js",
     "test": "node --test",

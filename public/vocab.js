@@ -286,7 +286,7 @@ function renderDashboard() {
       <div class="vocab-dashboard-grid">
         <aside class="vocab-sidebar">
           <div class="vocab-sidebar-heading">
-            <span class="vocab-eyebrow">Study library</span>
+            <span class="vocab-eyebrow">Your word library</span>
             <h1>Vocabulary</h1>
           </div>
           ${renderKindTabs()}
@@ -302,9 +302,9 @@ function renderDashboard() {
         <div class="vocab-main-column">
           <header class="vocab-toolbar">
             <div>
-              <p class="vocab-eyebrow">SAT Reading & Writing</p>
-              <h2>${metrics.due || 0} ${label.toLowerCase()} ready</h2>
-              <p>Continue with the items scheduled for today.</p>
+              <p class="vocab-eyebrow">Today’s review</p>
+              <h2>${metrics.due || 0} ${label.toLowerCase()} to study</h2>
+              <p>Due now based on your review history.</p>
             </div>
             <span class="source-badge">Spaced review</span>
           </header>
@@ -312,16 +312,16 @@ function renderDashboard() {
           <section class="study-actions">
             <div class="study-action-main">
               <div>
-                <span>Recommended</span>
-                <h2>Meaning practice</h2>
+                <span>Quiz</span>
+                <h2>Practice meanings</h2>
                 <p>${Math.min(15, Math.max(1, Number(metrics.due) || 15))} multiple-choice cards</p>
               </div>
-              <button class="primary" data-action="start-quiz">Start review</button>
+              <button class="primary" data-action="start-quiz">Start studying</button>
             </div>
             <div class="study-secondary-actions">
               <button class="study-action-secondary" data-action="start-recall">
                 <span>Recall cards</span>
-                <strong>Reveal and rate</strong>
+                <strong>Think first, then reveal</strong>
               </button>
               <button class="study-action-secondary" data-action="library">
                 <span>Full library</span>
@@ -362,8 +362,8 @@ function renderAddWord() {
 function renderRootFamilies() {
   return `
     <section class="root-note">
-      <strong>42 high-utility roots and prefixes</strong>
-      <span>Latin and Greek families used across academic English.</span>
+      <strong>42 useful roots and prefixes</strong>
+      <span>Use familiar parts of a word to reason through an unfamiliar meaning.</span>
     </section>
   `;
 }
@@ -494,7 +494,7 @@ function renderComplete() {
       <section class="vocab-complete">
         <span>Session complete</span>
         <h1>${state.correct}/${total}</h1>
-        <p>${state.missed ? `${state.missed} card${state.missed === 1 ? "" : "s"} will return sooner.` : "Every card moves to a longer interval."}</p>
+        <p>${state.missed ? `${state.missed} card${state.missed === 1 ? "" : "s"} will come back sooner so you can try again.` : "You remembered every card. They will return after a longer interval."}</p>
         <button class="primary" data-action="end-session">Back to vocabulary</button>
       </section>
     </main>

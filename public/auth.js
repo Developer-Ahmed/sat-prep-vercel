@@ -44,7 +44,7 @@ function renderNotFound() {
 function renderAuthProgressArt() {
   return `
     <div class="auth-progress-art" aria-hidden="true">
-      <div class="auth-progress-heading"><span>Study loop</span><strong>1600</strong></div>
+      <div class="auth-progress-heading"><span>Your work adds up</span><strong>1600</strong></div>
       <svg viewBox="0 0 560 280" role="presentation">
         <g class="auth-progress-grid">
           <path d="M34 38H526"></path>
@@ -67,7 +67,7 @@ function renderAuthProgressArt() {
           <circle cx="515" cy="43" r="7"></circle>
         </g>
       </svg>
-      <div class="auth-progress-steps"><span>Practice</span><span>Review</span><span>Retain</span></div>
+      <div class="auth-progress-steps"><span>Practice</span><span>Understand</span><span>Return</span></div>
     </div>
   `;
 }
@@ -141,17 +141,17 @@ function renderAuthentication() {
           <a class="product-lockup auth-product" href="/" aria-label="PEAK1600 home">${renderBrand()}</a>
           ${renderAuthProgressArt()}
           <div class="auth-copy">
-            <span class="section-kicker">Official SAT practice</span>
-            <h1>Reach your peak.</h1>
-            <p>Build the habits that make test day feel familiar.</p>
+            <span class="section-kicker">Practice with a plan</span>
+            <h1>Know what to work on next.</h1>
+            <p>Your questions, review, timing, and vocabulary stay together.</p>
           </div>
         </section>
         <section class="auth-entry-pane" aria-label="Account access">
           <div class="auth-theme-control">${renderThemeToggle()}</div>
           <div class="auth-intro auth-entry-card">
-            <span class="section-kicker">Your workspace</span>
+            <span class="section-kicker">Your study record</span>
             <h2>Continue to PEAK1600</h2>
-            <p>Sign in to open your saved questions, tests, and vocabulary progress.</p>
+            <p>Sign in to return to your questions, tests, and vocabulary progress.</p>
           </div>
           <div class="auth-actions" aria-label="Account options">
             <a class="auth-action primary" href="/sign-in">Sign in</a>
@@ -171,9 +171,9 @@ function renderAuthentication() {
         <a class="product-lockup auth-product" href="/" aria-label="PEAK1600 home">${renderBrand()}</a>
         ${renderAuthProgressArt()}
         <div class="auth-copy">
-          <span class="section-kicker">Official SAT practice</span>
-          <h1>Reach your peak.</h1>
-          <p>Focused practice, clear progress, and a workspace that stays out of your way.</p>
+          <span class="section-kicker">Practice with a plan</span>
+          <h1>Know what to work on next.</h1>
+          <p>Practice, understand what happened, and come back to the work that still matters.</p>
         </div>
       </section>
       <section class="auth-entry-pane" aria-label="${signingUp ? "Create account" : "Sign in"}">

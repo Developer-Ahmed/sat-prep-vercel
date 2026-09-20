@@ -18,6 +18,9 @@ test("runtime database role is least-privileged and has bounded query waits", ()
   assert.match(grants, /lock_timeout = '5s'/);
   assert.match(grants, /idle_in_transaction_session_timeout = '30s'/);
   assert.match(grants, /REVOKE ALL PRIVILEGES ON ALL TABLES/);
+  assert.match(grants, /GRANT SELECT ON questions, question_source_refs, question_pool_memberships, question_content TO sat_app/);
+  assert.match(grants, /GRANT SELECT ON app_settings TO sat_app/);
+  assert.doesNotMatch(grants, /GRANT SELECT, INSERT, UPDATE ON questions/);
   assert.doesNotMatch(grants, /GRANT ALL/);
 });
 

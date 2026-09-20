@@ -127,16 +127,6 @@ export function createRequestAuthenticator({ getClient = clerkBackendClient } = 
 
 export const authenticateRequest = createRequestAuthenticator();
 
-export function isAdmin(userId) {
-  const admins = new Set(
-    String(process.env.ADMIN_USER_IDS || "")
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean)
-  );
-  return admins.has(userId);
-}
-
 export async function verifyClerkWebhook(req, body) {
   const signingSecret = String(process.env.CLERK_WEBHOOK_SIGNING_SECRET || "").trim();
   if (!signingSecret) throw new Error("CLERK_WEBHOOK_SIGNING_SECRET is not configured.");

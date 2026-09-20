@@ -7,7 +7,7 @@ export const practiceScopeSchema = z.object({
 }).strict();
 
 export const createModuleSchema = practiceScopeSchema.extend({
-  mode: z.enum(["random", "realistic", "section", "adaptive"]).default("random"),
+  mode: z.enum(["random", "realistic", "section"]).default("random"),
   count: z.number().int().min(1).max(98).default(22),
   durationMinutes: z.number().finite().min(0).max(180).default(35),
   includeAnswered: z.boolean().default(false)

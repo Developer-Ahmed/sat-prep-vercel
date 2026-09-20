@@ -6,11 +6,12 @@
 2. Run `npm ci`, `npm run verify`, and an online `npm audit --omit=dev --audit-level=high`.
 3. Set `TEST_DATABASE_URL` to an isolated Neon branch and run `npm run test:integration`.
 4. Create a Neon restore point or branch before a production migration.
-5. With the owner credential available only to the release environment, run `npm run db:migrate`, `npm run db:grant-runtime`, and `npm run db:seed:reference`.
+5. With the owner credential available only to the release environment, run `npm run db:migrate`, `npm run db:grant-runtime`, `npm run db:seed:reference`, and `npm run catalog:seed`.
 6. Deploy the immutable commit. Never run migrations from the Vercel function.
 7. Verify `/api/health`, Google sign-in, module creation, answer persistence, submission, review, vocabulary review, account separation, and account deletion.
 8. Verify Clerk browser traffic uses `/__clerk/*`, the proxy never returns or logs the Clerk secret, redirect locations remain on the application origin, and Vercel CDN caching is disabled for proxy responses.
-9. Publish accurate privacy/terms pages with operator contact information and review whether the intended College Board content use is licensed or otherwise permitted. This is a legal launch requirement, not something application code can establish.
+9. Publish accurate privacy/terms pages with operator contact information. Verify that every deployed question is independently authored or separately licensed and that product copy does not imply endorsement.
+10. Complete the editorial and provenance checks in `docs/CONTENT_POLICY.md` for the bank version being released.
 
 ## Edge protection
 
@@ -18,10 +19,9 @@ Vercel provides platform DDoS protection, but application traffic still needs pr
 
 1. Start a rule for `/api/*` in log mode and observe normal traffic for at least ten minutes.
 2. Add a rate-limit rule for API traffic. Begin conservatively around 600 requests per five minutes per IP, then tune from real autosave traffic.
-3. Apply a much lower rule to `/api/import`, `/api/import-new`, and `/api/cache-all`; these routes are also server-authorized for administrators.
-4. Exclude or separately limit `/api/webhooks/clerk`; Clerk signatures and the receipt ledger protect authenticity and retries.
-5. Add a separate rule for `/__clerk/*`. Start in log mode, then rate-limit obvious abuse without blocking ordinary sign-in bursts. Clerk also applies its own IP-aware protection through the trusted Vercel forwarding header.
-6. Enable Vercel spend notifications and a hard budget appropriate for the project.
+3. Exclude or separately limit `/api/webhooks/clerk`; Clerk signatures and the receipt ledger protect authenticity and retries.
+4. Add a separate rule for `/__clerk/*`. Start in log mode, then rate-limit obvious abuse without blocking ordinary sign-in bursts. Clerk also applies its own IP-aware protection through the trusted Vercel forwarding header.
+5. Enable Vercel spend notifications and a hard budget appropriate for the project.
 
 Vercel documents project WAF rules and rate limiting at https://vercel.com/docs/vercel-firewall. In-memory limits are intentionally not used because serverless instances do not share state.
 
@@ -42,7 +42,7 @@ Vercel documents project WAF rules and rate limiting at https://vercel.com/docs/
 
 ## Secrets
 
-- Vercel receives `DATABASE_URL`, the public Clerk configuration, the production Clerk secret, the webhook signing secret, authorized origins, and optional administrator IDs. The Clerk secret is scoped to Production and is consumed only by the server-side request authenticator and `api/clerk.js` proxy.
+- Vercel receives `DATABASE_URL`, the public Clerk configuration, the production Clerk secret, the webhook signing secret, and authorized origins. The Clerk secret is scoped to Production and is consumed only by the server-side request authenticator and `api/clerk.js` proxy.
 - `DATABASE_ADMIN_URL` belongs only in the protected release environment.
 - Rotate a credential immediately if it appears in Git, browser code, logs, screenshots, or support messages.
 - Use Clerk production keys only for production; previews use a development instance and isolated database branch.

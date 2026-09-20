@@ -48,10 +48,6 @@
       "destination": "/index.html"
     },
     {
-      "source": "/new",
-      "destination": "/index.html"
-    },
-    {
       "source": "/vocab",
       "destination": "/index.html"
     },

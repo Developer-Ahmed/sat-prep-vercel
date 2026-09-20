@@ -75,25 +75,19 @@ npm ci
 npm run db:migrate
 npm run db:grant-runtime
 npm run db:seed:reference
-npm run catalog:import
+npm run catalog:seed
 ```
 
 Migrations are tracked in `schema_migrations` and protected by a PostgreSQL advisory lock, so two migration commands cannot change the schema concurrently.
-The catalog import is an operator command that uses the restricted runtime role. Ordinary user accounts cannot update the shared College Board catalog.
+The catalog seed is a release command that validates and writes the independently authored bank using the owner credential. The web runtime has read-only access to shared question tables.
 Migration checksums reject edited or missing migration files. The reference-data seed is idempotent and loads only the built-in vocabulary lists; it does not import user history or the former SQLite database.
 
-## 3. Create your administrator account
+## 3. Verify a local account
 
 Start the app and sign in with Google:
 
 ```sh
 npm run dev
-```
-
-Copy your `user_...` ID from **Clerk Dashboard > Users**. Add it to `.env.local`:
-
-```text
-ADMIN_USER_IDS=<your Clerk user ID>
 ```
 
 ## 4. Configure Vercel
@@ -115,7 +109,6 @@ CLERK_SECRET_KEY=<production Clerk secret key, Production only>
 CLERK_PROXY_URL=https://your-project.vercel.app/__clerk
 CLERK_WEBHOOK_SIGNING_SECRET=<production Clerk webhook signing secret>
 CLERK_AUTHORIZED_PARTIES=https://your-project.vercel.app
-ADMIN_USER_IDS=<comma-separated Clerk user IDs allowed to import questions>
 ```
 
 Do not add `DATABASE_ADMIN_URL` to the Vercel application. Keep it only in a protected migration environment such as local administration or CI.
@@ -133,7 +126,7 @@ Production startup intentionally fails if it sees a Clerk test key, a non-TLS or
 3. Confirm no response, browser bundle, or Vercel log contains `CLERK_SECRET_KEY` or an `sk_live_` value.
 4. Complete Google sign-in, refresh the page, sign out, and sign in again in a private window.
 5. Create two test accounts and verify that modules, answers, timing, and vocab progress do not cross accounts.
-6. Verify a non-admin account does not see catalog-import controls and receives HTTP 403 if it calls an import endpoint directly.
+6. Confirm former catalog mutation paths such as `/api/import` return HTTP 404.
 7. Sign out, refresh, and confirm protected APIs return HTTP 401.
 8. Create a Neon restore point or export after loading the shared question catalog and vocabulary reference data.
 

@@ -41,8 +41,8 @@ REVOKE ALL PRIVILEGES ON SCHEMA public FROM sat_app;
 GRANT USAGE ON SCHEMA public TO sat_app;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON app_users TO sat_app;
-GRANT SELECT, INSERT, UPDATE ON questions, question_source_refs, question_pool_memberships, question_content TO sat_app;
-GRANT SELECT, INSERT, UPDATE ON app_settings TO sat_app;
+GRANT SELECT ON questions, question_source_refs, question_pool_memberships, question_content TO sat_app;
+GRANT SELECT ON app_settings TO sat_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON clerk_webhook_events TO sat_app;
 GRANT SELECT ON question_catalog TO sat_app;
 

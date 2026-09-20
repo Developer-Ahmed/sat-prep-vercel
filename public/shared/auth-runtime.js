@@ -1,6 +1,6 @@
 export const SIGN_IN_PATH = "/sign-in";
 export const PUBLIC_ROUTE_ROOTS = Object.freeze(["/", "/home", "/about"]);
-export const PROTECTED_ROUTE_ROOTS = Object.freeze(["/math", "/english", "/new", "/vocab"]);
+export const PROTECTED_ROUTE_ROOTS = Object.freeze(["/math", "/english", "/vocab"]);
 
 function matchesRoute(pathname, route) {
   return pathname === route || pathname.startsWith(`${route}/`);

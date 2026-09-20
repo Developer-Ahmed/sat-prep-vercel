@@ -43,6 +43,7 @@ await sql.transaction([
 
 await import("./migrate.js");
 await import("./seed-reference-data.js");
+await import("./seed-original-question-bank.js");
 
 const role = await sql.query("SELECT 1 FROM pg_roles WHERE rolname = 'sat_app'");
 if (role.rows.length) {

@@ -34,23 +34,15 @@ const subjects = {
   }
 };
 
-function initialPool() {
-  return window.location.pathname.startsWith("/new") ? "new" : "main";
-}
-
 function initialSubject() {
   if (window.location.pathname.startsWith("/english")) return "english";
-  if (window.location.pathname.startsWith("/new")) {
-    return new URLSearchParams(window.location.search).get("subject") === "english" ? "english" : "math";
-  }
   return "math";
 }
 
 const state = {
   subject: initialSubject(),
-  pool: initialPool(),
+  pool: "main",
   status: null,
-  cacheJob: null,
   module: null,
   currentIndex: 0,
   currentDetail: null,
@@ -75,7 +67,6 @@ const state = {
   localTimeSegments: {},
   eliminatedAnswers: {},
   showCategoryBreakdown: localStorage.getItem("showCategoryBreakdown") !== "false",
-  importSource: "collegeboard",
   moduleOptions: {
     mode: "random",
     count: subjects[initialSubject()].defaultCount,
@@ -97,14 +88,14 @@ function subjectPath(path) {
 
 const api = {
   async get(path) {
-    return requestJson(subjectPath(path), {}, { resourceLabel: "SAT data" });
+    return requestJson(subjectPath(path), {}, { resourceLabel: "practice data" });
   },
   async post(path, body = {}) {
     return requestJson(path, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body)
-    }, { resourceLabel: "SAT data" });
+    }, { resourceLabel: "practice data" });
   },
   async postScoped(path, body = {}) {
     return this.post(path, { ...body, subject: state.subject, pool: state.pool });
@@ -156,46 +147,7 @@ function setError(error) {
 async function loadStatus() {
   const dashboard = await api.get("/api/dashboard");
   state.status = dashboard.status;
-  state.importSource = "collegeboard";
   state.modules = dashboard.modules;
-  state.cacheJob = dashboard.cacheJob;
-}
-
-async function loadCacheStatus() {
-  state.cacheJob = await api.get("/api/cache-status");
-}
-
-async function importQuestions() {
-  setError("");
-  setBusy(state.pool === "new" ? `Checking for new ${currentSubject().shortLabel} questions` : `Importing ${currentSubject().label} questions`);
-  try {
-    clearPendingAnswerSaves();
-    await api.postScoped(state.pool === "new" ? "/api/import-new" : "/api/import", { source: "collegeboard" });
-    await loadStatus();
-    state.importSource = "collegeboard";
-    state.modules = [];
-    state.module = null;
-    state.currentDetail = null;
-    state.referenceOpen = false;
-    resetTimeTracking();
-    resetQuestionDetails();
-    state.eliminatedAnswers = {};
-  } catch (error) {
-    setError(error);
-  } finally {
-    setBusy("");
-  }
-}
-
-async function cacheAllQuestions() {
-  setError("");
-  try {
-    state.cacheJob = await api.postScoped("/api/cache-all");
-    await loadStatus();
-    render();
-  } catch (error) {
-    setError(error);
-  }
 }
 
 async function createModule() {
@@ -204,9 +156,8 @@ async function createModule() {
   try {
     clearPendingAnswerSaves();
     const subject = currentSubject();
-    const lockedSatMode =
-      (state.pool === "new" && state.moduleOptions.mode === "adaptive") ||
-      (state.pool === "main" && subject.supportsRealistic && (state.moduleOptions.mode === "realistic" || state.moduleOptions.mode === "section"));
+    const lockedSatMode = subject.supportsRealistic
+      && (state.moduleOptions.mode === "realistic" || state.moduleOptions.mode === "section");
     const options = lockedSatMode
       ? {
           mode: state.moduleOptions.mode,
@@ -746,17 +697,7 @@ function statCard(label, value) {
 }
 
 function renderSubjectTabs() {
-  return renderAppNavigation(state.pool === "new" ? "new" : state.subject);
-}
-
-function renderNewSubjectSwitch() {
-  if (state.pool !== "new") return "";
-  return `
-    <nav class="new-subject-tabs" aria-label="New question subject">
-      <a class="${state.subject === "math" ? "active" : ""}" href="/new?subject=math">Math</a>
-      <a class="${state.subject === "english" ? "active" : ""}" href="/new?subject=english">English</a>
-    </nav>
-  `;
+  return renderAppNavigation(state.subject);
 }
 
 function accuracyPercent(correct, answered) {
@@ -787,7 +728,7 @@ function renderPerformanceBreakdown() {
         <div class="section-title">
           <div>
             <h2>Category Breakdown</h2>
-            <p>Import questions to see totals by domain and category.</p>
+            <p>Complete questions to see totals by domain and category.</p>
           </div>
           <button class="secondary analytics-toggle" data-action="toggle-category-breakdown">${buttonLabel}</button>
         </div>
@@ -869,41 +810,35 @@ function renderDashboard() {
   const status = state.status || {};
   const ready = Boolean(state.status);
   const subject = currentSubject();
-  const cache = state.cacheJob?.cache || status.contentCache || {};
-  const cacheJob = state.cacheJob || {};
-  const imported = status.total > 0;
-  const newPool = state.pool === "new";
-  const realisticMode = !newPool && subject.supportsRealistic && state.moduleOptions.mode === "realistic";
-  const sectionMode = !newPool && subject.supportsSection && state.moduleOptions.mode === "section";
-  const adaptiveMode = newPool && state.moduleOptions.mode === "adaptive";
-  const lockedSatMode = realisticMode || sectionMode || adaptiveMode;
-  const cacheLabel = `${formatNumber(cache.cached)}/${formatNumber(cache.total)}`;
-  const cachePercent = cache.total ? Math.round((cache.cached / cache.total) * 100) : 0;
+  const catalogReady = status.total > 0 && status.activeSource === "peak1600";
+  const realisticMode = subject.supportsRealistic && state.moduleOptions.mode === "realistic";
+  const sectionMode = subject.supportsSection && state.moduleOptions.mode === "section";
+  const lockedSatMode = realisticMode || sectionMode;
   const answered = Number(status.answered) || 0;
   const correct = Number(status.correct) || 0;
   const accuracy = accuracyPercent(correct, answered);
   const overallAccuracy = ready ? `${accuracy}%` : "—";
   const firstName = String(window.Clerk?.user?.firstName || "").trim();
-  const greeting = firstName ? `Welcome back, ${escapeHtml(firstName)}` : "Ready for focused practice?";
+  const hour = new Date().getHours();
+  const daypart = hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening";
+  const greeting = firstName ? `Good ${daypart}, ${escapeHtml(firstName)}.` : `Good ${daypart}.`;
   const modeOptions = [
     { value: "random", label: "Random" },
-    ...(newPool ? [{ value: "adaptive", label: "Adaptive section" }] : []),
-    ...(!newPool && subject.supportsRealistic ? [{ value: "realistic", label: "Realistic module" }] : []),
-    ...(!newPool && subject.supportsSection ? [{ value: "section", label: "Full section" }] : [])
+    ...(subject.supportsRealistic ? [{ value: "realistic", label: "Balanced module" }] : []),
+    ...(subject.supportsSection ? [{ value: "section", label: "Full section" }] : [])
   ];
-  const startLabel = adaptiveMode ? "Start adaptive section" : sectionMode ? "Start full section" : realisticMode ? "Start realistic module" : "Start random practice";
+  const startLabel = sectionMode ? "Start full section" : realisticMode ? "Start balanced module" : "Start random practice";
 
   return `
     <main class="dashboard" id="main-content">
       ${renderSubjectTabs()}
-      ${renderNewSubjectSwitch()}
       <div class="dashboard-grid">
         <div class="dashboard-main-column">
           <section class="dashboard-welcome">
             <div>
-              <span class="page-kicker">${escapeHtml(newPool ? "Recently added" : subject.shortLabel)}</span>
+              <span class="page-kicker">Your ${escapeHtml(subject.shortLabel)} practice</span>
               <h1>${greeting}</h1>
-              <p>${ready ? `${formatNumber(status.unanswered)} unanswered ${subject.shortLabel.toLowerCase()} questions are available.` : "Loading your progress…"}</p>
+              <p>${ready ? `${formatNumber(status.unanswered)} unanswered questions.` : "Loading your progress…"}</p>
             </div>
             <div class="welcome-actions">
               <button class="secondary" data-action="reset" ${ready ? "" : "disabled"}>Reset progress</button>
@@ -922,10 +857,10 @@ function renderDashboard() {
           <section class="module-panel" aria-labelledby="practice-builder-title">
             <div class="module-panel-heading">
               <div>
-                <span class="section-kicker">Practice builder</span>
-                <h2 id="practice-builder-title">Create your next ${escapeHtml(subject.shortLabel)} session</h2>
+                <span class="section-kicker">Choose your next step</span>
+                <h2 id="practice-builder-title">Build a ${escapeHtml(subject.shortLabel)} session</h2>
               </div>
-              <span class="source-badge">College Board</span>
+              <span class="source-badge">Original questions</span>
             </div>
             <div class="mode-segments" role="group" aria-label="Practice mode">
               ${modeOptions.map((mode) => `
@@ -949,11 +884,9 @@ function renderDashboard() {
             <div class="module-panel-actions">
               ${!ready
                 ? `<button class="primary start-practice" disabled>Loading questions</button>`
-                : imported
-                ? `<button class="primary start-practice" data-action="create-module">${startLabel}</button>`
-                : status.canManageCatalog
-                  ? `<button class="primary start-practice" data-action="import">Import question catalog</button>`
-                  : `<button class="primary start-practice" disabled>Question catalog unavailable</button>`}
+                : catalogReady
+                  ? `<button class="primary start-practice" data-action="create-module">${startLabel}</button>`
+                  : `<button class="primary start-practice" disabled>Original question bank unavailable</button>`}
             </div>
           </section>
 
@@ -962,7 +895,7 @@ function renderDashboard() {
 
         <aside class="dashboard-rail" aria-label="Practice summary">
           <section class="diagnostic-panel">
-            <span class="section-kicker">Current accuracy</span>
+            <span class="section-kicker">How practice is going</span>
             <div class="accuracy-ring" style="--accuracy:${accuracy}" aria-label="${overallAccuracy} accuracy">
               <div><strong>${overallAccuracy}</strong><span>${formatNumber(answered)} answered</span></div>
             </div>
@@ -973,27 +906,13 @@ function renderDashboard() {
           </section>
 
           <section class="review-hub">
-            <div class="section-title"><div><span class="section-kicker">Review</span><h2>Return to missed work</h2></div></div>
+            <div class="section-title"><div><span class="section-kicker">Worth another look</span><h2>Try these questions again</h2></div></div>
             <div class="review-actions" aria-label="Question review">
-              <button class="secondary" data-action="review-incorrect" ${status.incorrect ? "" : "disabled"}>Review ${formatNumber(status.incorrect)} incorrect</button>
-              <button class="secondary" data-action="review-flagged" ${status.flagged ? "" : "disabled"}>Review ${formatNumber(status.flagged)} flagged</button>
+              <button class="secondary" data-action="review-incorrect" ${status.incorrect ? "" : "disabled"}>${formatNumber(status.incorrect)} missed questions</button>
+              <button class="secondary" data-action="review-flagged" ${status.flagged ? "" : "disabled"}>${formatNumber(status.flagged)} flagged questions</button>
             </div>
           </section>
 
-          ${status.canManageCatalog ? `<details class="catalog-details">
-            <summary>Question catalog</summary>
-            <div class="catalog-content">
-              <div>
-                <strong>${formatNumber(status.total)} questions · ${cacheLabel} cached</strong>
-                <p>${status.lastImport ? `Updated ${new Date(status.lastImport).toLocaleString()} · ${escapeHtml(status.activeSourceLabel || "College Board")}` : "No question catalog imported yet"}</p>
-                ${cacheJob.error ? `<p class="cache-error">Last issue: ${escapeHtml(cacheJob.error)}</p>` : ""}
-              </div>
-              <div class="catalog-actions">
-                <button class="secondary" data-action="import">${newPool ? "Check for new questions" : imported ? "Refresh import" : "Import questions"}</button>
-                <button class="secondary" data-action="cache-all" ${imported && !cacheJob.running && cache.remaining ? "" : "disabled"}>${cacheJob.running ? `Caching ${formatNumber(cacheJob.completed)}/${formatNumber(cacheJob.total)}` : cache.remaining ? `Cache remaining (${cachePercent}%)` : "Fully cached"}</button>
-              </div>
-            </div>
-          </details>` : ""}
         </aside>
       </div>
     </main>
@@ -1080,7 +999,7 @@ function renderQuestionBody() {
     <article class="question-card ${showSourcePane ? "has-stimulus" : "single-pane"}">
       <div class="question-workspace">
         ${showSourcePane ? `<section class="question-source-pane" aria-label="Question source material">
-          <span class="question-pane-label">Source material</span>
+          <span class="question-pane-label">Read this first</span>
           <div class="content-block">${normalizeDisplayHtml(content.stimulus)}</div>
         </section>` : ""}
         <section class="question-response-pane" aria-label="Question and answer choices">
@@ -1093,7 +1012,7 @@ function renderQuestionBody() {
             </div>
             <div class="question-actions">
               ${isIncorrectReviewModule() ? `<button class="secondary danger-soft" data-action="remove-incorrect">Remove from incorrect</button>` : ""}
-              <button class="${flagged ? "flag-on" : "secondary"}" data-action="toggle-flag" aria-pressed="${flagged}" ${state.flagSavePromises[row.row_id] ? "disabled" : ""}>${flagged ? "Flagged" : "Flag for review"}</button>
+              <button class="${flagged ? "flag-on" : "secondary"}" data-action="toggle-flag" aria-pressed="${flagged}" ${state.flagSavePromises[row.row_id] ? "disabled" : ""}>${flagged ? "Marked for review" : "Mark for review"}</button>
             </div>
           </header>
           ${!showSourcePane && content.stimulus ? `<div class="content-block question-inline-material">${normalizeDisplayHtml(content.stimulus)}</div>` : ""}
@@ -1309,19 +1228,15 @@ function updateOption(target) {
   if (!key) return;
   if (key === "mode") {
     const subject = currentSubject();
-    const allowedModes = state.pool === "new" ? ["random", "adaptive"] : ["random"];
-    if (state.pool === "main" && subject.supportsRealistic) allowedModes.push("realistic");
-    if (state.pool === "main" && subject.supportsSection) allowedModes.push("section");
+    const allowedModes = ["random"];
+    if (subject.supportsRealistic) allowedModes.push("realistic");
+    if (subject.supportsSection) allowedModes.push("section");
     state.moduleOptions.mode = allowedModes.includes(target.value) ? target.value : "random";
-    if (target.value === "realistic" || target.value === "section" || target.value === "adaptive") {
+    if (target.value === "realistic" || target.value === "section") {
       state.moduleOptions.count = subject.defaultCount;
       state.moduleOptions.durationMinutes = subject.defaultMinutes;
       state.moduleOptions.includeAnswered = false;
     }
-    return;
-  }
-  if (key === "importSource") {
-    state.importSource = "collegeboard";
     return;
   }
   if (target.type === "checkbox") {
@@ -1411,8 +1326,6 @@ app.addEventListener("click", async (event) => {
   const row = currentQuestion();
 
   try {
-    if (action === "import") await importQuestions();
-    if (action === "cache-all") await cacheAllQuestions();
     if (action === "create-module") await createModule();
     if (action === "review-incorrect") await createReviewModule("incorrect");
     if (action === "review-flagged") await createReviewModule("flagged");
@@ -1500,18 +1413,8 @@ setInterval(() => {
   }
 }, 1000);
 
-setInterval(() => {
-  if (!state.cacheJob?.running) return;
-  loadCacheStatus()
-    .then(async () => {
-      if (!state.cacheJob?.running) await loadStatus();
-      render();
-    })
-    .catch(setError);
-}, 2000);
-
 state.loading = true;
-state.busyMessage = "Loading SAT data";
+state.busyMessage = "Loading practice data";
 render();
 
 loadStatus()

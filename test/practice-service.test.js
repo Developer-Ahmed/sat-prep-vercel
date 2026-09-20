@@ -13,7 +13,6 @@ test("status uses one database round trip and normalizes its aggregate result", 
           parameters.push(args);
           return {
             total: "10",
-            excluded: "2",
             available: "8",
             unanswered: "5",
             answered: "3",
@@ -21,7 +20,7 @@ test("status uses one database round trip and normalizes its aggregate result", 
             incorrect: "1",
             flagged: "1",
             imported_at: "2026-09-05T00:00:00.000Z",
-            active_source: "collegeboard",
+            active_source: "peak1600",
             performance_rows: JSON.stringify([
               { domain: "Algebra", skill: "Linear equations", total: 8, correct: 2, incorrect: 1, answered: 3 }
             ])
@@ -35,13 +34,11 @@ test("status uses one database round trip and normalizes its aggregate result", 
     async getQuestionContents() { return new Map(); },
     isAnsweredStatus() {},
     normalizePool: (value) => value === "new" ? "new" : "main",
-    sourceLabel: (source) => source === "collegeboard" ? "College Board official" : "No catalog imported"
   };
   const service = createPracticeService({
     db,
     currentUserId: () => "user_123",
-    catalog,
-    isAdmin: () => false
+    catalog
   });
 
   const status = await service.getStatus("math", "main");
@@ -51,7 +48,6 @@ test("status uses one database round trip and normalizes its aggregate result", 
   assert.deepEqual(parameters[0], ["user_123", "math", "main", "activeSource:math:main"]);
   assert.deepEqual(status, {
     total: 10,
-    excluded: 2,
     available: 8,
     unanswered: 5,
     answered: 3,
@@ -60,9 +56,7 @@ test("status uses one database round trip and normalizes its aggregate result", 
     flagged: 1,
     subject: "math",
     pool: "main",
-    activeSource: "collegeboard",
-    activeSourceLabel: "College Board official",
-    lastImport: "2026-09-05T00:00:00.000Z",
+    activeSource: "peak1600",
     performanceByDomain: [{
       domain: "Algebra",
       correct: 2,
@@ -70,8 +64,7 @@ test("status uses one database round trip and normalizes its aggregate result", 
       answered: 3,
       total: 8,
       skills: [{ skill: "Linear equations", total: 8, correct: 2, incorrect: 1, answered: 3 }]
-    }],
-    canManageCatalog: false
+    }]
   });
 });
 
@@ -112,8 +105,7 @@ test("opening a module starts independent detail reads together", async () => {
     activeSourceFor() {},
     async getQuestionContents() { return new Map(); },
     isAnsweredStatus() {},
-    normalizePool: (value) => value,
-    sourceLabel: () => ""
+    normalizePool: (value) => value
   };
   const service = createPracticeService({
     db,
@@ -148,10 +140,8 @@ test("flagging performs one atomic ownership-checked database statement", async 
   };
   const catalog = {
     activeSourceFor() {},
-    getQuestionContent() {},
     isAnsweredStatus() {},
-    normalizePool: (value) => value,
-    sourceLabel: () => ""
+    normalizePool: (value) => value
   };
   const service = createPracticeService({
     db,
@@ -183,10 +173,8 @@ test("answer saves are atomic and preserve a newer overlapping flag", async () =
   };
   const catalog = {
     activeSourceFor() {},
-    getQuestionContent() {},
     isAnsweredStatus() {},
-    normalizePool: (value) => value,
-    sourceLabel: () => ""
+    normalizePool: (value) => value
   };
   const service = createPracticeService({
     db,
@@ -218,8 +206,7 @@ test("timing saves use one atomic statement", async () => {
     activeSourceFor() {},
     getQuestionContents() {},
     isAnsweredStatus() {},
-    normalizePool: (value) => value,
-    sourceLabel: () => ""
+    normalizePool: (value) => value
   };
   const service = createPracticeService({
     db,
@@ -267,8 +254,7 @@ test("submission finalizes grading and section state in two transactional statem
           async all() {
             return [{
               row_id: "math:q1",
-              source: "collegeboard",
-              ibn: "",
+              source: "peak1600",
               answer: "A",
               module_flagged: false,
               position: 1,
@@ -314,8 +300,7 @@ test("submission finalizes grading and section state in two transactional statem
       return new Map(questions.map((question) => [question.row_id, content]));
     },
     isAnsweredStatus: (status) => status === "correct" || status === "incorrect",
-    normalizePool: (value) => value,
-    sourceLabel: () => ""
+    normalizePool: (value) => value
   };
   const service = createPracticeService({
     db,

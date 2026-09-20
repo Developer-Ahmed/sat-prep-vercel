@@ -8,49 +8,53 @@ app.innerHTML = `
     ${renderAppNavigation("home")}
     <section class="home-hero">
       <div class="home-hero-copy">
-        <span class="section-kicker">One SAT practice workspace</span>
-        <h1>PEAK1600</h1>
-        <p class="home-hero-lede">Build Math and Reading &amp; Writing modules from the question catalog, return to every missed or flagged problem, and keep vocabulary review moving on schedule.</p>
+        <span class="section-kicker">Practice with a plan</span>
+        <h1>Know what to work on next.</h1>
+        <p class="home-hero-lede">Practice, understand what slowed you down, and know where to return.</p>
         <div class="home-actions">
-          <a class="primary button-link" href="/math">Practice Math</a>
-          <a class="secondary button-link" href="/english">Practice Reading &amp; Writing</a>
+          <a class="primary button-link" href="/math">Start with Math</a>
+          <a class="secondary button-link" href="/english">Start with Reading &amp; Writing</a>
         </div>
-      </div>
-      <div class="product-map" aria-label="PEAK1600 study areas">
-        <header><span>Today</span><strong>Choose where to focus</strong></header>
-        <a href="/math"><span class="product-map-index">01</span><span><strong>Math practice</strong><small>Random, realistic, or full-section sessions</small></span><b>Open</b></a>
-        <a href="/english"><span class="product-map-index">02</span><span><strong>Reading &amp; Writing</strong><small>Practice ordered around the SAT module structure</small></span><b>Open</b></a>
-        <a href="/vocab"><span class="product-map-index">03</span><span><strong>Vocabulary</strong><small>Meaning questions, recall cards, and word roots</small></span><b>Open</b></a>
       </div>
     </section>
 
     <section class="home-system" aria-labelledby="home-system-title">
       <div class="home-section-heading">
-        <span class="section-kicker">The working loop</span>
-        <h2 id="home-system-title">Practice, inspect, return.</h2>
-        <p>The app keeps those three steps connected, so finishing a module does not erase the useful part: what happened inside it.</p>
+        <span class="section-kicker">Built around your work</span>
+        <h2 id="home-system-title">A clear loop, not another score screen.</h2>
+        <p>Your misses, flags, and timing turn each session into a useful next step.</p>
       </div>
-      <div class="home-steps">
-        <article><span>01</span><h3>Build a session</h3><p>Choose a short random set, an SAT-shaped module, or a full section. Unanswered questions are used first.</p></article>
-        <article><span>02</span><h3>Work without interruption</h3><p>Move freely, flag uncertainty, cross out choices, and review before submitting. Results wait until the end.</p></article>
-        <article><span>03</span><h3>Use the evidence</h3><p>Revisit incorrect and flagged questions, inspect time by attempt, and see results by domain and skill.</p></article>
-      </div>
+      <ol class="study-loop-visual" aria-label="Practice workflow">
+        <li><span>01</span><div class="study-loop-mark" aria-hidden="true">P</div><strong>Practice</strong><small>Choose a session.</small></li>
+        <li><span>02</span><div class="study-loop-mark" aria-hidden="true">R</div><strong>Review</strong><small>Find what slowed you down.</small></li>
+        <li><span>03</span><div class="study-loop-mark" aria-hidden="true">↻</div><strong>Return</strong><small>Try the right concepts again.</small></li>
+      </ol>
     </section>
 
     <section class="home-detail">
       <div>
-        <span class="section-kicker">Deliberately connected</span>
-        <h2>Questions and vocabulary belong in the same study record.</h2>
+        <span class="section-kicker">After a session</span>
+        <h2>See the work behind the score.</h2>
       </div>
-      <div class="home-detail-copy">
-        <p>Question practice shows where reasoning breaks down. Vocabulary review strengthens one of the inputs that Reading &amp; Writing depends on. PEAK1600 keeps both visible without forcing them into the same kind of exercise.</p>
-        <a href="/vocab">Open vocabulary study <span aria-hidden="true">→</span></a>
+      <div class="review-snapshot" aria-label="Example practice review summary">
+        <div><span>Correct</span><strong>18</strong></div>
+        <div><span>Review again</span><strong>4</strong></div>
+        <div><span>Flagged</span><strong>2</strong></div>
+        <div class="review-snapshot-bar"><span style="width:82%"></span></div>
+        <p>Open any missed question, hide the answer, and solve it again.</p>
+        <a href="/about">Why I built it this way <span aria-hidden="true">→</span></a>
       </div>
+    </section>
+
+    <section class="home-paths" aria-label="Study areas">
+      <a href="/math"><img src="/math-study.jpg" alt="A notebook with algebra, geometry, and graphs beside a calculator"><span>Math</span><strong>Build a set or take a full section.</strong><b>Open Math <span aria-hidden="true">→</span></b></a>
+      <a href="/english"><img src="/reading-study.jpg" alt="An open reading passage being annotated by hand"><span>Reading &amp; Writing</span><strong>Practice passages, grammar, and synthesis.</strong><b>Open Reading &amp; Writing <span aria-hidden="true">→</span></b></a>
+      <a href="/vocab"><img src="/vocab-study.jpg" alt="Vocabulary cards arranged beside a dictionary and notebook"><span>Vocabulary</span><strong>Learn meanings and roots over time.</strong><b>Open Vocabulary <span aria-hidden="true">→</span></b></a>
     </section>
 
     <footer class="home-footer">
       <a class="product-lockup" href="/" aria-label="PEAK1600 home"><span class="product-symbol" aria-hidden="true">P</span><strong class="product-name"><span>PEAK</span><b>1600</b></strong></a>
-      <p>Focused SAT practice, built around the work that comes next.</p>
+      <p>Made by a student who wanted a better way to understand his work.</p>
       <a href="/about">About the project</a>
     </footer>
   </main>

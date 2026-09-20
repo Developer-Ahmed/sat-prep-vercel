@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { extname, join } from "node:path";
 import { isKnownPath as isKnownAppRoute } from "../public/shared/auth-runtime.js";
 import * as clerkAuth from "./auth.js";
-import { errorPayload, HttpError } from "./platform/http.js";
+import { errorPayload } from "./platform/http.js";
 import { applySecurityHeaders, enforceTrustedOrigin } from "./platform/security.js";
 import { createCatalogService } from "./modules/catalog/service.js";
 import { createCatalogRoutes } from "./modules/catalog/routes.js";
@@ -41,18 +41,12 @@ export function createApplication({ db, publicDir, auth = clerkAuth, logger = lo
     return userId;
   }
 
-  function requireAdmin() {
-    if (!auth.isAdmin(currentUserId())) {
-      throw new HttpError(403, "ADMIN_REQUIRED", "Only an administrator can update the shared question catalog.");
-    }
-  }
-
   const catalog = createCatalogService({ db, currentUserId });
-  const practice = createPracticeService({ db, currentUserId, catalog, isAdmin: auth.isAdmin });
+  const practice = createPracticeService({ db, currentUserId, catalog });
   const vocabulary = createVocabularyService({ db, currentUserId });
   const users = createUserService({ db, currentUserId, practice });
-  const handleDashboardRoute = createDashboardRoutes({ practice, catalog, json });
-  const handleCatalogRoute = createCatalogRoutes({ service: catalog, json, requireAdmin });
+  const handleDashboardRoute = createDashboardRoutes({ practice, json });
+  const handleCatalogRoute = createCatalogRoutes({ service: catalog, json });
   const handlePracticeRoute = createPracticeRoutes({ service: practice, json });
   const handleVocabularyRoute = createVocabularyRoutes({ service: vocabulary, json });
   const { handlePublicUserRoute, handleUserRoute } = createUserRoutes({
