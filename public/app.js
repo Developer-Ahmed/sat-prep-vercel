@@ -1188,8 +1188,13 @@ function renderReferenceSheet() {
           <h2 id="reference-dialog-title">Reference sheet</h2>
           <button class="ghost icon" data-action="close-reference" aria-label="Close reference sheet" title="Close reference sheet">×</button>
         </header>
-        <div class="reference-image-wrap">
-          <img src="/reference_sheet.png" alt="SAT math reference sheet">
+        <div class="reference-grid" aria-label="Math formulas">
+          <section><h3>Circle</h3><p>Area: <i>A</i> = π<i>r</i><sup>2</sup></p><p>Circumference: <i>C</i> = 2π<i>r</i></p></section>
+          <section><h3>Plane figures</h3><p>Rectangle: <i>A</i> = <i>lw</i></p><p>Triangle: <i>A</i> = ½<i>bh</i></p></section>
+          <section><h3>Right triangles</h3><p><i>c</i><sup>2</sup> = <i>a</i><sup>2</sup> + <i>b</i><sup>2</sup></p><p>30°–60°–90° sides: <i>x</i>, <i>x</i>√3, 2<i>x</i></p><p>45°–45°–90° sides: <i>s</i>, <i>s</i>, <i>s</i>√2</p></section>
+          <section><h3>Prisms and cylinders</h3><p>Rectangular prism: <i>V</i> = <i>lwh</i></p><p>Cylinder: <i>V</i> = π<i>r</i><sup>2</sup><i>h</i></p></section>
+          <section><h3>Round solids</h3><p>Sphere: <i>V</i> = (4/3)π<i>r</i><sup>3</sup></p><p>Cone: <i>V</i> = ⅓π<i>r</i><sup>2</sup><i>h</i></p></section>
+          <section><h3>Pyramids and angles</h3><p>Rectangular pyramid: <i>V</i> = ⅓<i>lwh</i></p><p>A circle has 360° or 2π radians.</p><p>A triangle's angles total 180°.</p></section>
         </div>
         <footer>
           <button class="secondary" data-action="close-reference">Return</button>

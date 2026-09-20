@@ -18,7 +18,7 @@ function renderMessage(title, detail) {
   app.innerHTML = `
     <main class="auth-page" id="main-content">
       <section class="auth-message" role="alert">
-        <span class="auth-mark">P</span>
+        <a class="product-lockup auth-message-brand" href="/" aria-label="PEAK1600 home">${renderBrand({ compact: true })}</a>
         <h1>${escapeHtml(title)}</h1>
         <p>${escapeHtml(detail)}</p>
       </section>

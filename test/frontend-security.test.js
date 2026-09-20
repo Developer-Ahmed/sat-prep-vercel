@@ -15,6 +15,7 @@ const designSource = await readFile(new URL("../public/design.css", import.meta.
 const humanSource = await readFile(new URL("../public/human.css", import.meta.url), "utf8");
 const homeSource = await readFile(new URL("../public/home.js", import.meta.url), "utf8");
 const aboutSource = await readFile(new URL("../public/about.js", import.meta.url), "utf8");
+const assetProvenanceSource = await readFile(new URL("../docs/ASSET_PROVENANCE.md", import.meta.url), "utf8");
 
 test("primary navigation exposes the current product areas without the retired new-question tab", () => {
   for (const href of ["/", "/math", "/english", "/vocab", "/about"]) {
@@ -30,6 +31,10 @@ test("the product identity uses a dedicated summit mark and authentication progr
   assert.match(authSource, /function renderAuthProgressArt\(\)/);
   assert.match(authSource, /Practice[\s\S]{0,80}Understand[\s\S]{0,80}Return/);
   assert.doesNotMatch(authSource, /auth-peak-art/);
+  assert.match(indexSource, /class="product-symbol-primary"/);
+  assert.doesNotMatch(indexSource, /class="auth-mark"[^>]*>P</);
+  assert.match(homeSource, /renderBrand\(\{ compact: true \}\)/);
+  assert.match(homeSource, /import \{ renderAppNavigation, renderBrand \}/);
 });
 
 test("Clerk authentication stays fluid without nesting cards or duplicate account actions", () => {
@@ -42,7 +47,11 @@ test("Clerk authentication stays fluid without nesting cards or duplicate accoun
 
 test("the validated theme preference runs before styles paint", () => {
   assert.match(themeSource, /value === "light" \|\| value === "dark"/);
+  assert.match(themeSource, /applyTheme\(storedTheme\(\) \|\| "light"\)/);
+  assert.doesNotMatch(themeSource, /prefers-color-scheme/);
   assert.match(themeSource, /localStorage\.setItem\(storageKey, theme\)/);
+  assert.match(indexSource, /<html lang="en" data-theme="light">/);
+  assert.match(indexSource, /<meta name="theme-color" content="#f8f7f3">/);
   assert.ok(indexSource.indexOf('src="/theme.js"') < indexSource.indexOf('href="/design.css"'));
 });
 
@@ -65,6 +74,16 @@ test("public pages use original visuals and concise study-focused language", () 
   assert.match(aboutSource, /concepts I had not learned yet/);
   assert.doesNotMatch(`${homeSource}\n${aboutSource}`, /During the test, the question stays at the center/);
   assert.doesNotMatch(aboutSource, /I am continuing to improve PEAK1600/);
+  for (const asset of ["student-study.jpg", "math-study.jpg", "reading-study.jpg", "vocab-study.jpg", "building-peak.jpg"]) {
+    assert.match(assetProvenanceSource, new RegExp(asset.replace(".", "\\.")));
+  }
+});
+
+test("the math reference is independently rendered instead of shipping an official image", () => {
+  assert.match(appSource, /class="reference-grid"/);
+  assert.match(appSource, /A circle has 360° or 2π radians/);
+  assert.match(appSource, /Sphere: <i>V<\/i> = \(4\/3\)π/);
+  assert.doesNotMatch(appSource, /reference_sheet\.png/);
 });
 
 test("Vercel analytics loads once outside local development without reporting URL parameters", () => {

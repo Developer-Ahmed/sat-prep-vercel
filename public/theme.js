@@ -1,7 +1,6 @@
 (() => {
   const storageKey = "peak1600-theme";
   const root = document.documentElement;
-  const media = window.matchMedia("(prefers-color-scheme: light)");
 
   function storedTheme() {
     try {
@@ -38,7 +37,7 @@
     updateControls(theme);
   }
 
-  applyTheme(storedTheme() || (media.matches ? "light" : "dark"));
+  applyTheme(storedTheme() || "light");
 
   document.addEventListener("click", (event) => {
     if (!event.target.closest("[data-theme-toggle]")) return;
@@ -46,8 +45,4 @@
   });
 
   document.addEventListener("DOMContentLoaded", () => updateControls(root.dataset.theme));
-
-  media.addEventListener("change", (event) => {
-    if (!storedTheme()) applyTheme(event.matches ? "light" : "dark");
-  });
 })();

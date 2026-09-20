@@ -1,4 +1,4 @@
-import { renderAppNavigation } from "/shared/ui.js";
+import { renderAppNavigation, renderBrand } from "/shared/ui.js";
 
 const app = document.querySelector("#app");
 document.title = "PEAK1600 | SAT Practice";
@@ -53,7 +53,7 @@ app.innerHTML = `
     </section>
 
     <footer class="home-footer">
-      <a class="product-lockup" href="/" aria-label="PEAK1600 home"><span class="product-symbol" aria-hidden="true">P</span><strong class="product-name"><span>PEAK</span><b>1600</b></strong></a>
+      <a class="product-lockup" href="/" aria-label="PEAK1600 home">${renderBrand({ compact: true })}</a>
       <p>Made by a student who wanted a better way to understand his work.</p>
       <a href="/about">About the project</a>
     </footer>

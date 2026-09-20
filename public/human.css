@@ -131,6 +131,14 @@ html[data-theme="dark"] .primary:hover:not(:disabled) {
   color: var(--teal);
 }
 
+.boot-brand {
+  gap: 9px;
+}
+
+.boot-brand .product-name {
+  font-size: 18px;
+}
+
 .subject-tabs a {
   color: var(--muted);
 }
@@ -890,6 +898,24 @@ textarea:disabled {
 .dialog > footer {
   background: var(--panel);
   border-color: var(--line);
+}
+
+.reference-grid section {
+  background: var(--panel-strong);
+  border-color: var(--line);
+}
+
+.reference-grid h3 {
+  color: var(--teal);
+}
+
+.reference-grid p + p {
+  margin-top: 7px;
+}
+
+.auth-message-brand {
+  justify-content: center;
+  margin-bottom: 8px;
 }
 
 /* Vocabulary */
